@@ -1,0 +1,457 @@
+{
+  "ruleChain": {
+    "id": "youtube-indexed-hls",
+    "name": "YouTube through generic indexed VOD",
+    "root": true,
+    "debugMode": false,
+    "additionalInfo": {"noDefaultInput": true, "runLogMode": "off"}
+  },
+  "metadata": {
+    "firstNodeIndex": 0,
+    "endpoints": [
+      {
+        "id": "http",
+        "type": "endpoint/http",
+        "name": "YouTube indexed HLS",
+        "debugMode": false,
+        "configuration": {
+          "server": "ref://:9090",
+          "allowCors": false,
+          "readTimeout": 30,
+          "writeTimeout": 300,
+          "idleTimeout": 60,
+          "disableKeepalive": false
+        },
+        "processors": null,
+        "routers": [
+          {
+            "id": "manifest",
+            "params": ["GET"],
+            "from": {"path": "/youtube/:videoId/index.m3u8", "processors": []},
+            "to": {
+              "path": "youtube-indexed-hls:manifest-request",
+              "wait": true,
+              "processors": ["metadataToHeaders", "responseToBody"]
+            }
+          },
+          {
+            "id": "segment",
+            "params": ["GET"],
+            "from": {"path": "/youtube/:videoId/segments/:revision/:segment", "processors": []},
+            "to": {
+              "path": "youtube-indexed-hls:segment-request",
+              "wait": true,
+              "processors": ["resourceOriginResponse"]
+            }
+          }
+        ]
+      }
+    ],
+    "nodes": [
+      {
+        "id": "manifest-request",
+        "type": "jsTransform",
+        "name": "Resolve requested YouTube source",
+        "configuration": {
+          "jsScript": "var id=String(metadata.videoId||'');if(!/^[A-Za-z0-9_-]{6,32}$/.test(id))throw new Error('invalid videoId');metadata.videoId=id;metadata.phase='initial';metadata.statusCode='';metadata.errorBody='';return {'msg':{'timeout_seconds':180,'args':['--quiet','--no-warnings','--no-playlist','--skip-download','--cookies','/data/yt.txt','-f',\"bv*[height>=1080][vcodec~='^(avc1|h264)']+ba[ext=m4a]\",'-S','res:1080','--print','%(.{id,requested_formats})j','https://www.youtube.com/watch?v='+id]},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "source-resolver",
+        "type": "restApiCall",
+        "name": "Call yt-dlp resolver",
+        "configuration": {
+          "restEndpointUrlPattern": "http://ytdlp:8080/run",
+          "requestMethod": "POST",
+          "headers": {"Content-Type": "application/json", "Accept": "application/json"},
+          "readTimeoutMs": 200000,
+          "maxParallelRequestsCount": 8
+        }
+      },
+      {
+        "id": "source-retry-switch",
+        "type": "jsSwitch",
+        "name": "Retry transient resolver failure",
+        "configuration": {
+          "jsScript": "var code=Number(metadata.statusCode||0);return [(code===0||code===429||(code>=500&&code<600))?'Retry':'Fail'];"
+        }
+      },
+      {
+        "id": "source-retry-delay",
+        "type": "delay",
+        "name": "Back off resolver retry",
+        "configuration": {"delayMs":"200","maxPendingMsgs":64}
+      },
+      {
+        "id": "source-resolver-retry",
+        "type": "restApiCall",
+        "name": "Retry yt-dlp resolver once",
+        "configuration": {
+          "restEndpointUrlPattern": "http://ytdlp:8080/run",
+          "requestMethod": "POST",
+          "headers": {"Content-Type":"application/json","Accept":"application/json"},
+          "readTimeoutMs": 200000,
+          "maxParallelRequestsCount": 8
+        }
+      },
+      {
+        "id": "normalize-source",
+        "type": "jsTransform",
+        "name": "Normalize selected representations",
+        "configuration": {
+          "jsScript": "var outer=msg;if(typeof outer==='string')outer=JSON.parse(outer);if(!outer||Number(outer.exit_code)!==0)throw new Error('source resolution failed');var media=JSON.parse(String(outer.stdout||'').trim()),formats=media.requested_formats||[],video=null,audio=null;for(var i=0;i<formats.length;i++){var f=formats[i]||{};if(!video&&f.vcodec&&f.vcodec!=='none'&&(!f.acodec||f.acodec==='none'))video=f;if(!audio&&f.acodec&&f.acodec!=='none'&&(!f.vcodec||f.vcodec==='none'))audio=f;}if(!video||!audio||String(media.id)!==String(metadata.videoId))throw new Error('resolver returned invalid media');var source={'sourceKey':'youtube:'+metadata.videoId,'video':{'url':String(video.url||''),'headers':video.http_headers||{},'container':String(video.ext||''),'codec':String(video.vcodec||'')},'audio':{'url':String(audio.url||''),'headers':audio.http_headers||{},'container':String(audio.ext||''),'codec':String(audio.acodec||'')}};metadata.source=JSON.stringify(source);return {'msg':{'operation':'inspect','source':source},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "inspect",
+        "type": "indexedVod",
+        "name": "Inspect indexed media",
+        "configuration": {"root": "ref://indexed-vod"}
+      },
+      {
+        "id": "inspection-branch",
+        "type": "jsSwitch",
+        "name": "Route inspected lease",
+        "configuration": {
+          "jsScript": "return [metadata.phase==='initial'?'Initial':'Produce'];"
+        }
+      },
+      {
+        "id": "parent-acquire-request",
+        "type": "jsTransform",
+        "name": "Build VOD playlist and acquire parent",
+        "configuration": {
+          "jsScript": "var revision=String(msg.revision||''),segments=msg.segments||[];if(!/^[0-9a-f]{64}$/.test(revision)||segments.length<1)throw new Error('invalid source timeline');var max=0,lines=['#EXTM3U','#EXT-X-VERSION:3'];for(var i=0;i<segments.length;i++){var d=Number(segments[i].duration);if(!(d>0))throw new Error('invalid segment duration');if(d>max)max=d;}lines.push('#EXT-X-TARGETDURATION:'+Math.ceil(max),'#EXT-X-MEDIA-SEQUENCE:0','#EXT-X-PLAYLIST-TYPE:VOD','#EXT-X-INDEPENDENT-SEGMENTS');for(var j=0;j<segments.length;j++)lines.push('#EXTINF:'+Number(segments[j].duration).toFixed(6)+',','/youtube/'+metadata.videoId+'/segments/'+revision+'/'+j+'.ts');lines.push('#EXT-X-ENDLIST','');metadata.revision=revision;metadata.manifest=lines.join('\\n');$ctx.ChainCache().Set('indexed-vod:lease:'+metadata.videoId+':'+revision,metadata.source,'10m');return {'msg':{'operation':'acquire','key':'youtube:'+metadata.videoId+':hls','fingerprint':'indexed-ts-v2:'+revision,'ttlMs':21600000,'maxBytes':33554432,'productionTimeoutMs':300000},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "parent-origin",
+        "type": "resourceOrigin",
+        "name": "Initial member resource",
+        "configuration": {"root": "ref://resource-origin"}
+      },
+      {
+        "id": "parent-produce-request",
+        "type": "jsTransform",
+        "name": "Produce initial member",
+        "configuration": {
+          "jsScript": "metadata.resourceId=String(msg.resourceId);metadata.generation=String(msg.generation);metadata.stagingDir=String(msg.stagingDir);metadata.maxBytes=String(msg.maxBytes);metadata.publishBy=String(msg.publishBy);metadata.entrypoint='0.ts';metadata.kind='manifest';metadata.retry='0';return {'msg':{'operation':'produce','source':JSON.parse(metadata.source),'expectedRevision':metadata.revision,'segment':0,'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "segment-request",
+        "type": "jsTransform",
+        "name": "Resolve manifest parent",
+        "configuration": {
+          "jsScript": "var id=String(metadata.videoId||''),revision=String(metadata.revision||''),match=/^([0-9]+)\\.ts$/.exec(String(metadata.segment||''));if(!/^[A-Za-z0-9_-]{6,32}$/.test(id)||!/^[0-9a-f]{64}$/.test(revision)||!match)throw new Error('invalid segment path');metadata.videoId=id;metadata.revision=revision;metadata.segment=String(Number(match[1]));return {'msg':{'operation':'acquire','key':'youtube:'+id+':hls','fingerprint':'indexed-ts-v2:'+revision,'ttlMs':21600000,'maxBytes':33554432,'productionTimeoutMs':300000},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "parent-lookup",
+        "type": "resourceOrigin",
+        "name": "Resolve manifest parent",
+        "configuration": {"root": "ref://resource-origin"}
+      },
+      {
+        "id": "parent-ready-switch",
+        "type": "jsSwitch",
+        "name": "Reuse initial member or produce child",
+        "configuration": {"jsScript": "return [metadata.segment==='0'?'Initial':'Child'];"}
+      },
+      {
+        "id": "initial-resolve-request",
+        "type": "jsTransform",
+        "name": "Resolve initial member",
+        "configuration": {
+          "jsScript": "return {'msg':{'operation':'resolve','resourceId':String(msg.resourceId||''),'member':'0.ts'},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "initial-resolve",
+        "type": "resourceOrigin",
+        "name": "Initial member resource",
+        "configuration": {"root": "ref://resource-origin"}
+      },
+      {
+        "id": "child-acquire-request",
+        "type": "jsTransform",
+        "name": "Acquire demand member",
+        "configuration": {
+          "jsScript": "return {'msg':{'operation':'acquire','key':'youtube:'+metadata.videoId+':'+metadata.revision+':segment:'+metadata.segment,'fingerprint':'indexed-ts-v2','parentResourceId':String(msg.resourceId||''),'ttlMs':600000,'maxBytes':33554432,'productionTimeoutMs':300000},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "child-origin",
+        "type": "resourceOrigin",
+        "name": "Demand member resource",
+        "configuration": {"root": "ref://resource-origin"}
+      },
+      {
+        "id": "segment-production-context",
+        "type": "jsTransform",
+        "name": "Bind demand production lease",
+        "configuration": {
+          "jsScript": "metadata.resourceId=String(msg.resourceId);metadata.generation=String(msg.generation);metadata.stagingDir=String(msg.stagingDir);metadata.maxBytes=String(msg.maxBytes);metadata.publishBy=String(msg.publishBy);metadata.entrypoint=metadata.segment+'.ts';metadata.kind='segment';metadata.phase='segment';metadata.retry='0';return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':dataType};"
+        }
+      },
+      {
+        "id": "segment-source-switch",
+        "type": "jsSwitch",
+        "name": "Reuse cached source lease",
+        "configuration": {
+          "jsScript": "return [$ctx.ChainCache().Has('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision)?'Cached':'Resolve'];"
+        }
+      },
+      {
+        "id": "cached-produce-request",
+        "type": "jsTransform",
+        "name": "Produce from cached source lease",
+        "configuration": {
+          "jsScript": "var source=JSON.parse(String($ctx.ChainCache().Get('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision)));metadata.source=JSON.stringify(source);return {'msg':{'operation':'produce','source':source,'expectedRevision':metadata.revision,'segment':Number(metadata.segment),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "segment-resolve-request",
+        "type": "jsTransform",
+        "name": "Resolve source for demand member",
+        "configuration": {
+          "jsScript": "metadata.statusCode='';metadata.errorBody='';return {'msg':{'timeout_seconds':180,'args':['--quiet','--no-warnings','--no-playlist','--skip-download','--cookies','/data/yt.txt','-f',\"bv*[height>=1080][vcodec~='^(avc1|h264)']+ba[ext=m4a]\",'-S','res:1080','--print','%(.{id,requested_formats})j','https://www.youtube.com/watch?v='+metadata.videoId]},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "produce-request",
+        "type": "jsTransform",
+        "name": "Verify revision and produce member",
+        "configuration": {
+          "jsScript": "if(String(msg.revision||'')!==String(metadata.revision||''))throw new Error('source revision changed');return {'msg':{'operation':'produce','source':JSON.parse(metadata.source),'expectedRevision':metadata.revision,'segment':Number(metadata.segment||0),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "produce",
+        "type": "indexedVod",
+        "name": "Produce one indexed member",
+        "configuration": {"root": "ref://indexed-vod"}
+      },
+      {
+        "id": "stale-switch",
+        "type": "jsSwitch",
+        "name": "Refresh one stale source lease",
+        "configuration": {
+          "jsScript": "return [String(msg.kind||'')==='source_stale'&&metadata.retry!=='1'?'Refresh':'Fail'];"
+        }
+      },
+      {
+        "id": "refresh-request",
+        "type": "jsTransform",
+        "name": "Refresh source lease once",
+        "configuration": {
+          "jsScript": "metadata.retry='1';metadata.phase='refresh';metadata.statusCode='';metadata.errorBody='';$ctx.ChainCache().Delete('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision);return {'msg':{'timeout_seconds':180,'args':['--quiet','--no-warnings','--no-playlist','--skip-download','--cookies','/data/yt.txt','-f',\"bv*[height>=1080][vcodec~='^(avc1|h264)']+ba[ext=m4a]\",'-S','res:1080','--print','%(.{id,requested_formats})j','https://www.youtube.com/watch?v='+metadata.videoId]},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "refresh-resolver",
+        "type": "restApiCall",
+        "name": "Refresh yt-dlp source lease",
+        "configuration": {
+          "restEndpointUrlPattern": "http://ytdlp:8080/run",
+          "requestMethod": "POST",
+          "headers": {"Content-Type":"application/json","Accept":"application/json"},
+          "readTimeoutMs": 200000,
+          "maxParallelRequestsCount": 8
+        }
+      },
+      {
+        "id": "refresh-retry-switch",
+        "type": "jsSwitch",
+        "name": "Retry transient refresh failure",
+        "configuration": {
+          "jsScript": "var code=Number(metadata.statusCode||0);return [(code===0||code===429||(code>=500&&code<600))?'Retry':'Fail'];"
+        }
+      },
+      {
+        "id": "refresh-retry-delay",
+        "type": "delay",
+        "name": "Back off refresh retry",
+        "configuration": {"delayMs":"200","maxPendingMsgs":64}
+      },
+      {
+        "id": "refresh-resolver-retry",
+        "type": "restApiCall",
+        "name": "Retry yt-dlp refresh once",
+        "configuration": {
+          "restEndpointUrlPattern": "http://ytdlp:8080/run",
+          "requestMethod": "POST",
+          "headers": {"Content-Type":"application/json","Accept":"application/json"},
+          "readTimeoutMs": 200000,
+          "maxParallelRequestsCount": 8
+        }
+      },
+      {
+        "id": "refresh-normalize",
+        "type": "jsTransform",
+        "name": "Normalize refreshed lease",
+        "configuration": {
+          "jsScript": "var outer=msg;if(typeof outer==='string')outer=JSON.parse(outer);if(!outer||Number(outer.exit_code)!==0)throw new Error('source refresh failed');var media=JSON.parse(String(outer.stdout||'').trim()),formats=media.requested_formats||[],video=null,audio=null;for(var i=0;i<formats.length;i++){var f=formats[i]||{};if(!video&&f.vcodec&&f.vcodec!=='none'&&(!f.acodec||f.acodec==='none'))video=f;if(!audio&&f.acodec&&f.acodec!=='none'&&(!f.vcodec||f.vcodec==='none'))audio=f;}if(!video||!audio||String(media.id)!==String(metadata.videoId))throw new Error('resolver returned invalid media');var source={'sourceKey':'youtube:'+metadata.videoId,'video':{'url':String(video.url||''),'headers':video.http_headers||{},'container':String(video.ext||''),'codec':String(video.vcodec||'')},'audio':{'url':String(audio.url||''),'headers':audio.http_headers||{},'container':String(audio.ext||''),'codec':String(audio.acodec||'')}};metadata.source=JSON.stringify(source);return {'msg':{'operation':'inspect','source':source},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "refresh-inspect",
+        "type": "indexedVod",
+        "name": "Verify refreshed source revision",
+        "configuration": {"root": "ref://indexed-vod"}
+      },
+      {
+        "id": "refresh-produce-request",
+        "type": "jsTransform",
+        "name": "Retry with verified source lease",
+        "configuration": {
+          "jsScript": "if(String(msg.revision||'')!==String(metadata.revision||''))throw new Error('source revision changed');return {'msg':{'operation':'produce','source':JSON.parse(metadata.source),'expectedRevision':metadata.revision,'segment':Number(metadata.segment||0),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "refresh-produce",
+        "type": "indexedVod",
+        "name": "Produce with refreshed lease",
+        "configuration": {"root": "ref://indexed-vod"}
+      },
+      {
+        "id": "commit-request",
+        "type": "jsTransform",
+        "name": "Commit produced member",
+        "configuration": {
+          "jsScript": "if(metadata.source)$ctx.ChainCache().Set('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision,metadata.source,'10m');return {'msg':{'operation':'commit','resourceId':metadata.resourceId,'generation':metadata.generation,'entrypoint':metadata.entrypoint},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "commit",
+        "type": "resourceOrigin",
+        "name": "Publish produced member",
+        "configuration": {"root": "ref://resource-origin"}
+      },
+      {
+        "id": "commit-switch",
+        "type": "jsSwitch",
+        "name": "Return playlist or segment",
+        "configuration": {"jsScript": "return [metadata.kind==='manifest'?'Manifest':'Segment'];"}
+      },
+      {
+        "id": "manifest-response",
+        "type": "jsTransform",
+        "name": "Return HLS playlist",
+        "configuration": {
+          "jsScript": "return {'msg':metadata.manifest,'metadata':{'Content-Type':'application/vnd.apple.mpegurl'},'msgType':msgType,'dataType':'TEXT'};"
+        }
+      },
+      {
+        "id": "parent-missing-request",
+        "type": "jsTransform",
+        "name": "Reject segment without manifest",
+        "configuration": {
+          "jsScript": "return {'msg':{'operation':'fail','resourceId':msg.resourceId,'generation':msg.generation,'kind':'parent_unavailable'},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "parent-missing",
+        "type": "resourceOrigin",
+        "name": "Close missing parent reservation",
+        "configuration": {"root": "ref://resource-origin"}
+      },
+      {
+        "id": "production-fail-request",
+        "type": "jsTransform",
+        "name": "Close failed production",
+        "configuration": {
+          "jsScript": "return {'msg':{'operation':'fail','resourceId':metadata.resourceId,'generation':metadata.generation,'kind':String(msg.kind||'producer_failed')},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "production-fail",
+        "type": "resourceOrigin",
+        "name": "Record failed production",
+        "configuration": {"root": "ref://resource-origin"}
+      },
+      {
+        "id": "resolution-failure-switch",
+        "type": "jsSwitch",
+        "name": "Close an active production lease",
+        "configuration": {
+          "jsScript": "return [metadata.resourceId?'Production':'Request'];"
+        }
+      },
+      {
+        "id": "request-error",
+        "type": "jsTransform",
+        "name": "Return source resolution failure",
+        "configuration": {
+          "jsScript": "throw new Error(String((msg&&msg.message)||metadata.errorBody||'source resolution failed'));"
+        }
+      }
+    ],
+    "connections": [
+      {"fromId":"manifest-request","toId":"source-resolver","type":"Success"},
+      {"fromId":"source-resolver","toId":"normalize-source","type":"Success"},
+      {"fromId":"source-resolver","toId":"source-retry-switch","type":"Failure"},
+      {"fromId":"source-retry-switch","toId":"source-retry-delay","type":"Retry"},
+      {"fromId":"source-retry-delay","toId":"source-resolver-retry","type":"Success"},
+      {"fromId":"source-resolver-retry","toId":"normalize-source","type":"Success"},
+      {"fromId":"source-retry-switch","toId":"resolution-failure-switch","type":"Fail"},
+      {"fromId":"source-resolver-retry","toId":"resolution-failure-switch","type":"Failure"},
+      {"fromId":"normalize-source","toId":"inspect","type":"Success"},
+      {"fromId":"inspect","toId":"inspection-branch","type":"Success"},
+      {"fromId":"normalize-source","toId":"resolution-failure-switch","type":"Failure"},
+      {"fromId":"inspect","toId":"resolution-failure-switch","type":"Failure"},
+      {"fromId":"resolution-failure-switch","toId":"production-fail-request","type":"Production"},
+      {"fromId":"resolution-failure-switch","toId":"request-error","type":"Request"},
+      {"fromId":"inspection-branch","toId":"parent-acquire-request","type":"Initial"},
+      {"fromId":"parent-acquire-request","toId":"parent-origin","type":"Success"},
+      {"fromId":"parent-origin","toId":"manifest-response","type":"Success"},
+      {"fromId":"parent-origin","toId":"parent-produce-request","type":"Produce"},
+      {"fromId":"parent-produce-request","toId":"produce","type":"Success"},
+
+      {"fromId":"segment-request","toId":"parent-lookup","type":"Success"},
+      {"fromId":"parent-lookup","toId":"parent-ready-switch","type":"Success"},
+      {"fromId":"parent-lookup","toId":"parent-missing-request","type":"Produce"},
+      {"fromId":"parent-missing-request","toId":"parent-missing","type":"Success"},
+      {"fromId":"parent-ready-switch","toId":"initial-resolve-request","type":"Initial"},
+      {"fromId":"initial-resolve-request","toId":"initial-resolve","type":"Success"},
+      {"fromId":"parent-ready-switch","toId":"child-acquire-request","type":"Child"},
+      {"fromId":"child-acquire-request","toId":"child-origin","type":"Success"},
+      {"fromId":"child-origin","toId":"segment-production-context","type":"Produce"},
+      {"fromId":"segment-production-context","toId":"segment-source-switch","type":"Success"},
+      {"fromId":"segment-source-switch","toId":"cached-produce-request","type":"Cached"},
+      {"fromId":"cached-produce-request","toId":"produce","type":"Success"},
+      {"fromId":"cached-produce-request","toId":"segment-resolve-request","type":"Failure"},
+      {"fromId":"segment-source-switch","toId":"segment-resolve-request","type":"Resolve"},
+      {"fromId":"segment-resolve-request","toId":"source-resolver","type":"Success"},
+
+      {"fromId":"inspection-branch","toId":"produce-request","type":"Produce"},
+      {"fromId":"produce-request","toId":"produce","type":"Success"},
+      {"fromId":"produce","toId":"commit-request","type":"Success"},
+      {"fromId":"commit-request","toId":"commit","type":"Success"},
+      {"fromId":"commit","toId":"commit-switch","type":"Success"},
+      {"fromId":"commit-switch","toId":"manifest-response","type":"Manifest"},
+
+      {"fromId":"produce","toId":"stale-switch","type":"Failure"},
+      {"fromId":"stale-switch","toId":"refresh-request","type":"Refresh"},
+      {"fromId":"refresh-request","toId":"refresh-resolver","type":"Success"},
+      {"fromId":"refresh-resolver","toId":"refresh-normalize","type":"Success"},
+      {"fromId":"refresh-resolver","toId":"refresh-retry-switch","type":"Failure"},
+      {"fromId":"refresh-retry-switch","toId":"refresh-retry-delay","type":"Retry"},
+      {"fromId":"refresh-retry-delay","toId":"refresh-resolver-retry","type":"Success"},
+      {"fromId":"refresh-resolver-retry","toId":"refresh-normalize","type":"Success"},
+      {"fromId":"refresh-retry-switch","toId":"production-fail-request","type":"Fail"},
+      {"fromId":"refresh-resolver-retry","toId":"production-fail-request","type":"Failure"},
+      {"fromId":"refresh-normalize","toId":"refresh-inspect","type":"Success"},
+      {"fromId":"refresh-inspect","toId":"refresh-produce-request","type":"Success"},
+      {"fromId":"refresh-produce-request","toId":"refresh-produce","type":"Success"},
+      {"fromId":"refresh-produce","toId":"commit-request","type":"Success"},
+      {"fromId":"refresh-normalize","toId":"production-fail-request","type":"Failure"},
+      {"fromId":"refresh-inspect","toId":"production-fail-request","type":"Failure"},
+      {"fromId":"refresh-produce-request","toId":"production-fail-request","type":"Failure"},
+      {"fromId":"refresh-produce","toId":"production-fail-request","type":"Failure"},
+      {"fromId":"stale-switch","toId":"production-fail-request","type":"Fail"},
+      {"fromId":"produce-request","toId":"production-fail-request","type":"Failure"},
+      {"fromId":"production-fail-request","toId":"production-fail","type":"Success"}
+    ]
+  }
+}

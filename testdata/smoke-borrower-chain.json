@@ -1,0 +1,22 @@
+{
+  "ruleChain": {
+    "id": "indexed-vod-smoke",
+    "name": "Indexed VOD ref smoke",
+    "root": true
+  },
+  "metadata": {
+    "firstNodeIndex": 0,
+    "nodes": [
+      {
+        "id": "borrower",
+        "type": "indexedVod",
+        "configuration": {"root": "ref://indexed-vod"}
+      },
+      {"id": "end", "type": "end", "configuration": {}}
+    ],
+    "connections": [
+      {"fromId": "borrower", "toId": "end", "type": "Success"},
+      {"fromId": "borrower", "toId": "end", "type": "Failure"}
+    ]
+  }
+}
