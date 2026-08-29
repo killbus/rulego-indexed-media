@@ -61,31 +61,31 @@ is resolver input and must not become an `indexedVod` concept.
 
 ## Acceptance Criteria
 
-- [ ] Owner configuration contains only the shared staging root,
+- [x] Owner configuration contains only the shared staging root,
       ffmpeg-over-ip connection, and bounded execution timeouts.
-- [ ] `inspect` accepts a normalized media lease and returns only revision,
+- [x] `inspect` accepts a normalized media lease and returns only revision,
       duration, and segment durations.
-- [ ] `produce` accepts a normalized media lease, expected revision, segment,
+- [x] `produce` accepts a normalized media lease, expected revision, segment,
       and the `resourceOrigin` staging lease; it returns one closed `N.ts`
       member and byte accounting without manifest fields.
-- [ ] Production code contains no YouTube or yt-dlp request/response semantics.
-- [ ] Concurrent inspection of one selected source performs one bounded index
+- [x] Production code contains no YouTube or yt-dlp request/response semantics.
+- [x] Concurrent inspection of one selected source performs one bounded index
       discovery and returns the same revision.
-- [ ] Refreshed representation URLs with unchanged immutable media evidence
+- [x] Refreshed representation URLs with unchanged immutable media evidence
       reproduce the same revision; changed media is rejected.
-- [ ] 429, transient 5xx, and network disconnects retry with bounded backoff;
+- [x] 429, transient 5xx, and network disconnects retry with bounded backoff;
       source-stale and FFmpeg failures remain distinct and tested.
-- [ ] SIDX, Range, staging confinement, byte limits, exact audio overlap, and
+- [x] SIDX, Range, staging confinement, byte limits, exact audio overlap, and
       temporary-file cleanup remain covered by focused tests.
-- [ ] The YouTube RuleGo example resolves through the existing yt-dlp wrapper,
+- [x] The YouTube RuleGo example resolves through the existing yt-dlp wrapper,
       normalizes its output, and performs exactly one bounded refresh/retry on
       a stale lease.
-- [ ] Local integration demonstrates initial playback, distant and near-end
+- [x] Local integration demonstrates initial playback, distant and near-end
       seek, same-member concurrency, restart recovery, expiry recovery,
       bounded retained files, and no complete upstream download.
-- [ ] GitHub CI passes formatting, vet, unit/race tests, ABI-pinned amd64/arm64
+- [x] GitHub CI passes formatting, vet, unit/race tests, ABI-pinned amd64/arm64
       plugin builds, and owner plus `ref://` borrower smoke loading.
-- [ ] A verified release contains matching binaries, checksums, ABI sidecars,
+- [x] A verified release contains matching binaries, checksums, ABI sidecars,
       documentation, and the working YouTube integration example.
 
 ## Out of Scope

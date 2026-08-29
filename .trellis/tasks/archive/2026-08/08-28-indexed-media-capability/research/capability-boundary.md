@@ -73,3 +73,10 @@ caller-provided manifest, provider registry, or compatibility alias.
   complete upstream representation.
 - `go test ./...`, `go vet ./...`, JSON validation, gofmt, and diff checks pass.
   Race and ABI-pinned plugin builds remain GitHub CI responsibilities.
+- GitHub CI run `33228435892` passed formatting, vet, unit, race, release
+  metadata, pinned amd64/arm64 builds, and owner plus `ref://` borrower smoke
+  loading for commit `88434c8946382742131e3f8d81964fd7edfb5d55`.
+- Release workflow run `33228711756` published the tested CI artifacts as
+  `v0.2.0`. The public release is non-draft and non-prerelease; both plugin
+  checksums, ABI sidecars, compatibility metadata, README, and example chain
+  were downloaded and verified against the release source.
