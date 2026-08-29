@@ -1,0 +1,35 @@
+{
+  "ruleChain": {
+    "id": "default_node_pool",
+    "name": "Indexed VOD end-to-end owners"
+  },
+  "metadata": {
+    "endpoints": [],
+    "nodes": [
+      {
+        "id": "resource-origin",
+        "type": "resourceOrigin",
+        "configuration": {
+          "root": "./data/resource-origin",
+          "staticUrlPrefix": "/resources",
+          "maxRetainedBytes": 268435456,
+          "maxResourceBytes": 33554432,
+          "maxTtlMs": 86400000,
+          "maxProductionMs": 300000
+        }
+      },
+      {
+        "id": "indexed-vod",
+        "type": "indexedVod",
+        "configuration": {
+          "root": "/app/data/resource-origin/staging",
+          "ffmpegAddress": "ffoip:5050",
+          "ffmpegSecret": "fixture-secret",
+          "indexTimeoutMs": 30000,
+          "ffmpegDialTimeoutMs": 5000,
+          "produceTimeoutMs": 300000
+        }
+      }
+    ]
+  }
+}

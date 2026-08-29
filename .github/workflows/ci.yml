@@ -145,6 +145,72 @@ jobs:
             plugin/dist/*.abi.json
           if-no-files-found: error
 
+  e2e-hls-seek:
+    name: Hermetic HLS seek
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-linux-amd64
+          path: dist
+      - name: Download and verify peer plugins
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/peers
+          download_release() {
+            repo="$1"
+            tag="$2"
+            artifact="$3"
+            for attempt in 1 2 3 4; do
+              if gh release download "$tag" --repo "$repo" --dir tmp/peers --clobber \
+                --pattern "$artifact" --pattern "$artifact.sha256" --pattern "$artifact.abi.json"; then
+                return
+              fi
+              test "$attempt" -lt 4
+              sleep $((2 ** attempt))
+            done
+          }
+          ffmpeg_artifact=ffmpeg-over-ip-rulego-v0.5.1-linux-amd64.so
+          origin_artifact=resource-origin-rulego-v0.1.1-linux-amd64.so
+          download_release killbus/rulego-ffmpeg-over-ip v0.5.1 "$ffmpeg_artifact"
+          download_release killbus/rulego-resource-origin v0.1.1 "$origin_artifact"
+          (
+            cd tmp/peers
+            sha256sum --check "$ffmpeg_artifact.sha256"
+            sha256sum --check "$origin_artifact.sha256"
+          )
+          abi_id=$(jq -er .abi_id plugin-abi-release.json)
+          lock_digest=$(jq -er .lock_digest plugin-abi-release.json)
+          for artifact in "$ffmpeg_artifact" "$origin_artifact"; do
+            artifact_sha256=$(sha256sum "tmp/peers/$artifact" | awk '{print $1}')
+            jq -e --arg abi "$abi_id" --arg lock "$lock_digest" --arg sha "$artifact_sha256" '
+              .abi_id == $abi and .lock_digest == $lock and
+              .platform == "linux/amd64" and .plugin_sha256 == $sha
+            ' "tmp/peers/$artifact.abi.json"
+          done
+          {
+            echo "INDEXED_PLUGIN=$GITHUB_WORKSPACE/dist/indexed-vod-rulego-v$(cat VERSION)-linux-amd64.so"
+            echo "FFMPEG_PLUGIN=$GITHUB_WORKSPACE/tmp/peers/$ffmpeg_artifact"
+            echo "ORIGIN_PLUGIN=$GITHUB_WORKSPACE/tmp/peers/$origin_artifact"
+          } >> "$GITHUB_ENV"
+      - name: Run real indexed HLS path
+        run: tests/e2e-hls-seek.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-hls-seek-debug
+          path: tmp/e2e-hls.*/
+          if-no-files-found: ignore
+
   release-metadata:
     runs-on: ubuntu-24.04
     steps:
