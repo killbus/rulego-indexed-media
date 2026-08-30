@@ -409,6 +409,15 @@
         }
       },
       {
+        "id": "manifest-public-origin",
+        "type": "jsTransform",
+        "name": "Bind public media origin",
+        "additionalInfo": {"layoutX": 4640, "layoutY": 420},
+        "configuration": {
+          "jsScript": "var publicOrigin='http://localhost:9090'.replace(/\\/+$/,'');var lines=String(msg||'').split('\\n');for(var i=0;i<lines.length;i++)if(lines[i].charAt(0)==='/')lines[i]=publicOrigin+lines[i];return {'msg':lines.join('\\n'),'metadata':metadata,'msgType':msgType,'dataType':'TEXT'};"
+        }
+      },
+      {
         "id": "parent-missing-request",
         "type": "jsTransform",
         "name": "Reject segment without manifest",
@@ -462,6 +471,7 @@
     "connections": [
       {"fromId":"manifest-request","toId":"manifest-cache-switch","type":"Success"},
       {"fromId":"manifest-cache-switch","toId":"cached-manifest-response","type":"Cached"},
+      {"fromId":"cached-manifest-response","toId":"manifest-public-origin","type":"Success"},
       {"fromId":"manifest-cache-switch","toId":"source-resolve-request","type":"Resolve"},
       {"fromId":"source-resolve-request","toId":"source-resolver","type":"Success"},
       {"fromId":"source-resolver","toId":"normalize-source","type":"Success"},
@@ -505,6 +515,7 @@
       {"fromId":"commit-request","toId":"commit","type":"Success"},
       {"fromId":"commit","toId":"commit-switch","type":"Success"},
       {"fromId":"commit-switch","toId":"manifest-response","type":"Manifest"},
+      {"fromId":"manifest-response","toId":"manifest-public-origin","type":"Success"},
 
       {"fromId":"produce","toId":"stale-switch","type":"Failure"},
       {"fromId":"stale-switch","toId":"refresh-request","type":"Refresh"},

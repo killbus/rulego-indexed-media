@@ -146,6 +146,8 @@ cp "$root/tests/e2e/node-pool.json" "$run_dir/node_pool.json"
 jq '
 	.ruleChain.debugMode = true |
 	.ruleChain.additionalInfo.runLogMode = "detail" |
+	(.metadata.nodes[] | select(.id == "manifest-public-origin") | .configuration.jsScript) |=
+		gsub("http://localhost:9090"; "http://rulego:9090") |
 	(.metadata.nodes[] | select(.id == "parent-acquire-request" or .id == "segment-request") | .configuration.jsScript) |=
 		gsub("21600000"; "(metadata.videoId===\"expiry01\"?3000:21600000)") |
 	(.metadata.nodes[] | select(.id == "child-acquire-request") | .configuration.jsScript) |=
@@ -193,20 +195,22 @@ retry curl --fail --silent --show-error --max-time 180 -D "$run_dir/index.header
 grep -Eq '^HTTP/[^ ]+ 200 ' "$run_dir/index.headers"
 grep -Fxq '#EXT-X-PLAYLIST-TYPE:VOD' "$run_dir/index.m3u8"
 grep -Fxq '#EXT-X-ENDLIST' "$run_dir/index.m3u8"
-if grep -Eq 'https?://|fixture-lease|fixture-secret' "$run_dir/index.m3u8"; then
+if grep -Eq 'fixture-lease|fixture-secret' "$run_dir/index.m3u8"; then
 	exit 1
 fi
-awk 'NF && $0 !~ /^#/ && $0 !~ /^\/youtube\// { exit 1 }' "$run_dir/index.m3u8"
-mapfile -t members < <(grep '^/youtube/' "$run_dir/index.m3u8")
+public_origin=http://rulego:9090
+awk -v prefix="$public_origin/youtube/" 'NF && $0 !~ /^#/ && index($0,prefix) != 1 { exit 1 }' "$run_dir/index.m3u8"
+mapfile -t members < <(grep "^${public_origin}/youtube/" "$run_dir/index.m3u8")
 test "${#members[@]}" -ge 8
 target_index=$(( ${#members[@]} * 3 / 4 ))
 target=${members[$target_index]}
+target_path=${target#"$public_origin"}
 
 curl --fail --silent --show-error "http://127.0.0.1:${fixture_port}/stats" >"$run_dir/stats-before.json"
 before_video=$(jq '[.requests[] | select(.path == "/video.mp4" and .status == 206 and (.range | startswith("bytes=0-") | not))] | length' "$run_dir/stats-before.json")
-curl --fail --silent --show-error --location --max-time 180 "$rulego_url$target" >"$run_dir/member-a.ts" &
+curl --fail --silent --show-error --location --max-time 180 "$rulego_url$target_path" >"$run_dir/member-a.ts" &
 first_pid=$!
-curl --fail --silent --show-error --location --max-time 180 "$rulego_url$target" >"$run_dir/member-b.ts" &
+curl --fail --silent --show-error --location --max-time 180 "$rulego_url$target_path" >"$run_dir/member-b.ts" &
 second_pid=$!
 wait "$first_pid"
 wait "$second_pid"
@@ -238,7 +242,7 @@ jq -e '
 ' "$run_dir/stats-after.json" >/dev/null
 
 curl --fail --silent --show-error --max-time 30 -D "$run_dir/member-before-restart.headers" \
-	-o /dev/null "$rulego_url$target"
+	-o /dev/null "$rulego_url$target_path"
 grep -Eq '^HTTP/[^ ]+ 307 ' "$run_dir/member-before-restart.headers"
 static_location_before=$(awk 'BEGIN{IGNORECASE=1}/^Location:/{sub(/\r$/,"",$2);print $2}' "$run_dir/member-before-restart.headers")
 test "${static_location_before#/resources/}" != "$static_location_before"
@@ -260,14 +264,14 @@ start_rulego
 manifest_url="$rulego_url/youtube/fixture01/index.m3u8"
 retry curl --fail --silent --show-error --max-time 180 \
 	-o "$run_dir/index-after-restart.m3u8" "$manifest_url"
-curl --fail --silent --show-error --location --max-time 180 "$rulego_url$target" >"$run_dir/member-after-restart.ts"
+curl --fail --silent --show-error --location --max-time 180 "$rulego_url$target_path" >"$run_dir/member-after-restart.ts"
 test "$(sha256sum "$run_dir/index-after-restart.m3u8" | awk '{print $1}')" = "$manifest_sha"
 test "$(sha256sum "$run_dir/member-after-restart.ts" | awk '{print $1}')" = "$member_sha"
 curl --fail --silent --show-error "http://127.0.0.1:${fixture_port}/stats" >"$run_dir/stats-restart.json"
 test "$(jq '[.requests[] | select(.path == "/video.mp4" and (.range | startswith("bytes=0-") | not))] | length' "$run_dir/stats-restart.json")" -eq "$video_media_requests"
 
 curl --fail --silent --show-error --max-time 30 -D "$run_dir/member.headers" \
-	-o /dev/null "$rulego_url$target"
+	-o /dev/null "$rulego_url$target_path"
 grep -Eq '^HTTP/[^ ]+ 307 ' "$run_dir/member.headers"
 static_location=$(awk 'BEGIN{IGNORECASE=1}/^Location:/{sub(/\r$/,"",$2);print $2}' "$run_dir/member.headers")
 test "${static_location#/resources/}" != "$static_location"
@@ -291,11 +295,12 @@ test "$(curl --silent --show-error -H "If-Modified-Since: $last_modified" -o /de
 expiry_manifest_url="$rulego_url/youtube/expiry01/index.m3u8"
 retry curl --fail --silent --show-error --max-time 180 \
 	-o "$run_dir/expiry-index.m3u8" "$expiry_manifest_url"
-mapfile -t expiry_members < <(grep '^/youtube/' "$run_dir/expiry-index.m3u8")
+mapfile -t expiry_members < <(grep "^${public_origin}/youtube/" "$run_dir/expiry-index.m3u8")
 test "${#expiry_members[@]}" -ge 8
 expiry_target=${expiry_members[$(( ${#expiry_members[@]} * 3 / 4 ))]}
+expiry_target_path=${expiry_target#"$public_origin"}
 curl --fail --silent --show-error --max-time 180 -D "$run_dir/expiry-member.headers" \
-	-o /dev/null "$rulego_url$expiry_target"
+	-o /dev/null "$rulego_url$expiry_target_path"
 grep -Eq '^HTTP/[^ ]+ 307 ' "$run_dir/expiry-member.headers"
 expiry_static_location=$(awk 'BEGIN{IGNORECASE=1}/^Location:/{sub(/\r$/,"",$2);print $2}' "$run_dir/expiry-member.headers")
 test "${expiry_static_location#/resources/}" != "$expiry_static_location"
@@ -305,7 +310,7 @@ expiry_media_requests=$(jq '[.requests[] | select(.path == "/video.mp4" or .path
 
 expiry_deadline=$((SECONDS + 15))
 while true; do
-	expiry_status=$(curl --silent --show-error -o "$run_dir/expiry-response.json" -w '%{http_code}' "$rulego_url$expiry_target")
+	expiry_status=$(curl --silent --show-error -o "$run_dir/expiry-response.json" -w '%{http_code}' "$rulego_url$expiry_target_path")
 	if test "$expiry_status" = 502; then
 		break
 	fi
@@ -324,7 +329,7 @@ sed 's#^resource_mapping = /resources/#resource_mapping = /broken/#' \
 docker rm -f "$rulego_container" >/dev/null
 start_rulego "$run_dir/broken-config.conf"
 curl --fail --silent --show-error --max-time 30 -D "$run_dir/broken-member.headers" \
-	-o /dev/null "$rulego_url$target"
+	-o /dev/null "$rulego_url$target_path"
 grep -Eq '^HTTP/[^ ]+ 307 ' "$run_dir/broken-member.headers"
 broken_static_location=$(awk 'BEGIN{IGNORECASE=1}/^Location:/{sub(/\r$/,"",$2);print $2}' "$run_dir/broken-member.headers")
 test "$broken_static_location" = "$static_location"

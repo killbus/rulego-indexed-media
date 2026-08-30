@@ -101,4 +101,6 @@ invocation, while deterministic exits are terminal.
 complete resolver → `indexedVod` → `resourceOrigin` composition. Its manifest
 route returns playlist text directly with `responseToBody`; only `.ts` members
 are staged and published. The example uses `ref://:9090`, so RuleGo Server must
-set `share_http_server = true`.
+set `share_http_server = true`. Set `publicOrigin` in the
+`manifest-public-origin` JavaScript node to the externally reachable RuleGo
+origin before deployment.

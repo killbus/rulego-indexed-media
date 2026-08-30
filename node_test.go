@@ -301,6 +301,45 @@ func TestExampleScriptsCompile(t *testing.T) {
 	}
 }
 
+func TestExampleManifestPublicOrigin(t *testing.T) {
+	node := exampleScriptNodes(t, "manifest-public-origin")["manifest-public-origin"]
+	dsl, err := json.Marshal(map[string]any{
+		"ruleChain": map[string]any{"id": "manifest-public-origin-test", "root": true},
+		"metadata": map[string]any{
+			"firstNodeIndex": 0,
+			"nodes": []json.RawMessage{
+				node,
+				json.RawMessage(`{"id":"end","type":"end","configuration":{}}`),
+			},
+			"connections": []map[string]string{{"fromId": "manifest-public-origin", "toId": "end", "type": types.Success}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := rulego.NewRuleGo()
+	engine, err := pool.New("manifest-public-origin-test", dsl, rulego.WithConfig(rulego.NewConfig()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Stop(nil)
+
+	manifest := "#EXTM3U\n/youtube/video/segments/revision/0.ts\n#EXT-X-ENDLIST\n"
+	input := types.NewMsg(0, "", types.TEXT, types.NewMetadata(), manifest)
+	var output types.RuleMsg
+	var callbackErr error
+	engine.OnMsgAndWait(input, types.WithOnEnd(func(_ types.RuleContext, msg types.RuleMsg, err error, _ string) {
+		output, callbackErr = msg, err
+	}))
+	if callbackErr != nil {
+		t.Fatal(callbackErr)
+	}
+	want := "#EXTM3U\nhttp://localhost:9090/youtube/video/segments/revision/0.ts\n#EXT-X-ENDLIST\n"
+	if got := string(output.GetBytes()); got != want {
+		t.Fatalf("absolute manifest = %q, want %q", got, want)
+	}
+}
+
 func TestExampleSignedURLLeaseExpiry(t *testing.T) {
 	normalize := exampleScriptNodes(t, "normalize-source")["normalize-source"]
 	dsl, err := json.Marshal(map[string]any{
