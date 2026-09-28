@@ -59,13 +59,13 @@ func (m *sourceManager) produceOnce(ctx context.Context, bundle *sourceBundle, r
 	if err != nil {
 		return produceResult{}, err
 	}
-	videoFile, err := os.CreateTemp(directory, ".indexed-vod-video-*.mp4")
+	videoFile, err := os.CreateTemp(directory, ".indexed-media-video-*.mp4")
 	if err != nil {
 		return produceResult{}, problem("storage", "temporary video could not be created")
 	}
 	videoPath := videoFile.Name()
 	defer os.Remove(videoPath)
-	audioFile, err := os.CreateTemp(directory, ".indexed-vod-audio-*.m4a")
+	audioFile, err := os.CreateTemp(directory, ".indexed-media-audio-*.m4a")
 	if err != nil {
 		_ = videoFile.Close()
 		return produceResult{}, problem("storage", "temporary audio could not be created")

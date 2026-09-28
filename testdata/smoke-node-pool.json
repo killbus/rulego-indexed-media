@@ -7,10 +7,10 @@
     "endpoints": [],
     "nodes": [
       {
-        "id": "indexed-vod",
-        "type": "indexedVod",
+        "id": "indexed-media",
+        "type": "indexedMedia",
         "configuration": {
-          "root": "./data/indexed-vod",
+          "root": "./data/indexed-media",
           "ffmpegAddress": "127.0.0.1:1",
           "ffmpegSecret": "smoke-only"
         }

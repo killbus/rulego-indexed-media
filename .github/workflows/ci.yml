@@ -32,6 +32,8 @@ jobs:
           ' plugin-abi-release.json
           jq -e . examples/youtube-hls/chain.json testdata/*.json >/dev/null
       - run: go mod download
+      - name: Verify source module identity
+        run: test "$(go list -m)" = "github.com/killbus/rulego-indexed-media"
       - name: Formatting
         run: test -z "$(gofmt -l .)"
       - run: go vet ./...
@@ -68,7 +70,7 @@ jobs:
             echo "RUNTIME_REF=$(jq -er .runtime plugin/plugin-abi-release.json)"
             echo "ABI_ID=$(jq -er .abi_id plugin/plugin-abi-release.json)"
             echo "LOCK_DIGEST=$(jq -er .lock_digest plugin/plugin-abi-release.json)"
-            echo "PLUGIN_ARTIFACT=indexed-vod-rulego-v$(cat plugin/VERSION)-linux-${{ matrix.arch }}.so"
+            echo "PLUGIN_ARTIFACT=indexed-media-rulego-v$(cat plugin/VERSION)-linux-${{ matrix.arch }}.so"
           } >> "$GITHUB_ENV"
       - name: Pull pinned SDK with bounded retry
         run: |
@@ -97,6 +99,20 @@ jobs:
               .abi_id == $abi and .lock_digest == $lock and
               .platform == $platform and .plugin_sha256 == $sha
             ' "$PLUGIN_ARTIFACT.abi.json"
+      - name: Verify embedded Go module identity
+        run: |
+          set -euo pipefail
+          mkdir -p plugin/tmp
+          docker run --rm --platform "linux/${{ matrix.arch }}" \
+            -v "$GITHUB_WORKSPACE/plugin/dist:/artifacts:ro" \
+            --entrypoint /usr/local/go/bin/go \
+            "$SDK_REF" version -m "/artifacts/$PLUGIN_ARTIFACT" \
+            > plugin/tmp/module-info.txt
+          awk '$1 == "path" { found = ($2 == "github.com/killbus/rulego-indexed-media") } END { exit !found }' \
+            plugin/tmp/module-info.txt
+          awk '$1 == "mod" { found = ($2 == "github.com/killbus/rulego-indexed-media") } END { exit !found }' \
+            plugin/tmp/module-info.txt
+          ! grep -Fq 'github.com/killbus/rulego-indexed-vod' plugin/tmp/module-info.txt
       - name: Pull pinned runtime with bounded retry
         run: |
           set -euo pipefail
@@ -109,10 +125,10 @@ jobs:
       - name: Smoke-load owner and ref borrower
         run: |
           set -euo pipefail
-          mkdir -p plugin/tmp/data/plugins plugin/tmp/data/indexed-vod
+          mkdir -p plugin/tmp/data/plugins plugin/tmp/data/indexed-media
           cp "plugin/dist/$PLUGIN_ARTIFACT" plugin/tmp/data/plugins/
           chmod -R a+rwX plugin/tmp/data
-          container="indexed-vod-smoke-${{ matrix.arch }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          container="indexed-media-smoke-${{ matrix.arch }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           docker run --rm --detach --name "$container" \
             --platform "linux/${{ matrix.arch }}" -p 127.0.0.1:9090:9090 \
             -v "$GITHUB_WORKSPACE/plugin/tmp/data:/app/data" \
@@ -128,14 +144,24 @@ jobs:
             sleep 0.2
           done
           test -s plugin/tmp/components.json || { docker logs "$container"; exit 1; }
-          jq -e '.nodes | any(.type == "indexedVod")' plugin/tmp/components.json
-          jq -e '.builtins.nodePool.indexedVod | any(.id == "indexed-vod")' plugin/tmp/components.json
+          jq -e '
+            (.nodes | any(.type == "indexedMedia")) and
+            (.nodes | all(.type != "indexedVod")) and
+            (.builtins.nodePool.indexedMedia | any(.id == "indexed-media")) and
+            (.builtins.nodePool | has("indexedVod") | not)
+          ' plugin/tmp/components.json
           curl --fail --silent --show-error \
             -H 'Content-Type: application/json' \
             --data-binary @plugin/testdata/smoke-borrower-chain.json \
-            http://127.0.0.1:9090/api/v1/rules/indexed-vod-smoke >/dev/null
-          curl --fail --silent http://127.0.0.1:9090/api/v1/rules/indexed-vod-smoke \
-            | jq -e '.metadata.nodes | any(.type == "indexedVod" and .configuration.root == "ref://indexed-vod")'
+            http://127.0.0.1:9090/api/v1/rules/indexed-media-smoke >/dev/null
+          curl --fail --silent http://127.0.0.1:9090/api/v1/rules/indexed-media-smoke \
+            | jq -e '
+                ([.metadata.nodes[] |
+                  select(.type == "indexedMedia" and .configuration.root == "ref://indexed-media")
+                ] | length) == 1 and
+                ([.metadata.nodes[] | select(.type == "indexedVod")] | length) == 0 and
+                ([.metadata.nodes[] | select(.configuration.root? == "ref://indexed-vod")] | length) == 0
+              '
       - uses: actions/upload-artifact@v4
         with:
           name: plugin-linux-${{ matrix.arch }}
@@ -198,7 +224,7 @@ jobs:
             ' "tmp/peers/$artifact.abi.json"
           done
           {
-            echo "INDEXED_PLUGIN=$GITHUB_WORKSPACE/dist/indexed-vod-rulego-v$(cat VERSION)-linux-amd64.so"
+            echo "INDEXED_PLUGIN=$GITHUB_WORKSPACE/dist/indexed-media-rulego-v$(cat VERSION)-linux-amd64.so"
             echo "FFMPEG_PLUGIN=$GITHUB_WORKSPACE/tmp/peers/$ffmpeg_artifact"
             echo "ORIGIN_PLUGIN=$GITHUB_WORKSPACE/tmp/peers/$origin_artifact"
           } >> "$GITHUB_ENV"

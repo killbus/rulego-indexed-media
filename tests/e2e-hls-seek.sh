@@ -7,7 +7,7 @@ runtime_ref=$(jq -er .runtime "$root/plugin-abi-release.json")
 ffoip_server_ref=ghcr.io/killbus/ffmpeg-over-ip-server@sha256:61eb8c18b031b01d4d5a3de8ccc1691314fccb03404d7c6192b436b97ad63427
 ffoip_client_ref=ghcr.io/killbus/ffmpeg-over-ip-client@sha256:58b5061521d705e1bc808d487242759914541f330de3b33be98b73ce367d8f2a
 
-: "${INDEXED_PLUGIN:?set INDEXED_PLUGIN to the candidate indexed-vod .so}"
+: "${INDEXED_PLUGIN:?set INDEXED_PLUGIN to the candidate indexed-media .so}"
 : "${FFMPEG_PLUGIN:?set FFMPEG_PLUGIN to the verified ffmpeg-over-ip .so}"
 : "${ORIGIN_PLUGIN:?set ORIGIN_PLUGIN to the verified resource-origin .so}"
 
@@ -21,7 +21,7 @@ done
 mkdir -p "$root/tmp"
 run_dir=$(mktemp -d "$root/tmp/e2e-hls.XXXXXX")
 chmod 0777 "$run_dir"
-network="indexed-vod-e2e-${RANDOM}-${RANDOM}"
+network="indexed-media-e2e-${RANDOM}-${RANDOM}"
 ffoip_container="ffoip-${RANDOM}-${RANDOM}"
 fixture_container="ytdlp-${RANDOM}-${RANDOM}"
 rulego_container="rulego-${RANDOM}-${RANDOM}"
@@ -174,8 +174,11 @@ curl --fail --silent --show-error "$rulego_url/api/v1/components" >"$run_dir/com
 jq -e '
 	(.nodes | any(.type == "ffmpegOverIp")) and
 	(.nodes | any(.type == "ffmpegOverIpProducer")) and
-	(.nodes | any(.type == "indexedVod")) and
+	(.nodes | any(.type == "indexedMedia")) and
+	(.nodes | all(.type != "indexedVod")) and
 	(.nodes | any(.type == "resourceOrigin")) and
+	(.builtins.nodePool.indexedMedia | any(.id == "indexed-media")) and
+	(.builtins.nodePool | has("indexedVod") | not) and
 	(.builtins.endpoints.outProcessors | index("ffmpegOverIpResponse") != null) and
 	(.builtins.endpoints.outProcessors | index("resourceOriginResponse") != null)
 ' "$run_dir/components.json" >/dev/null
@@ -188,6 +191,15 @@ fi
 curl --fail --silent --show-error -H 'Content-Type: application/json' \
 	--data-binary @"$run_dir/chain.json" \
 	"$rulego_url/api/v1/rules/youtube-indexed-hls" >/dev/null
+curl --fail --silent --show-error \
+	"$rulego_url/api/v1/rules/youtube-indexed-hls" >"$run_dir/saved-chain.json"
+jq -e '
+	([.metadata.nodes[] |
+		select(.type == "indexedMedia" and .configuration.root == "ref://indexed-media")
+	] | length) == 4 and
+	([.metadata.nodes[] | select(.type == "indexedVod")] | length) == 0 and
+	([.metadata.nodes[] | select(.configuration.root? == "ref://indexed-vod")] | length) == 0
+' "$run_dir/saved-chain.json" >/dev/null
 
 manifest_url="$rulego_url/youtube/fixture01/index.m3u8"
 retry curl --fail --silent --show-error --max-time 180 -D "$run_dir/index.headers" \

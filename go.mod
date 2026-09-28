@@ -1,4 +1,4 @@
-module github.com/killbus/rulego-indexed-vod
+module github.com/killbus/rulego-indexed-media
 
 go 1.25.0
 
