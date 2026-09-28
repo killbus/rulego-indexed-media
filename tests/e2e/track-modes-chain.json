@@ -1,0 +1,40 @@
+{
+  "ruleChain": {
+    "id": "indexed-media-acceptance",
+    "name": "Test-only indexed media operations",
+    "root": true,
+    "additionalInfo": {"noDefaultInput": true}
+  },
+  "metadata": {
+    "firstNodeIndex": 0,
+    "endpoints": [{
+      "id": "http",
+      "type": "endpoint/http",
+      "configuration": {"server": "ref://:9090", "readTimeout": 30, "writeTimeout": 300},
+      "routers": [
+        {
+          "id": "indexed", "params": ["POST"],
+          "from": {"path": "/e2e/indexed", "processors": []},
+          "to": {"path": "indexed-media-acceptance:indexed", "wait": true, "processors": ["responseToBody"]}
+        },
+        {
+          "id": "origin", "params": ["POST"],
+          "from": {"path": "/e2e/origin", "processors": []},
+          "to": {"path": "indexed-media-acceptance:origin", "wait": true, "processors": ["responseToBody"]}
+        }
+      ]
+    }],
+    "nodes": [
+      {"id": "indexed", "type": "indexedMedia", "configuration": {"root": "ref://indexed-media"}},
+      {"id": "origin", "type": "resourceOrigin", "configuration": {"root": "ref://resource-origin"}},
+      {"id": "result", "type": "end"}
+    ],
+    "connections": [
+      {"fromId": "indexed", "toId": "result", "type": "Success"},
+      {"fromId": "indexed", "toId": "result", "type": "Failure"},
+      {"fromId": "origin", "toId": "result", "type": "Produce"},
+      {"fromId": "origin", "toId": "result", "type": "Success"},
+      {"fromId": "origin", "toId": "result", "type": "Failure"}
+    ]
+  }
+}

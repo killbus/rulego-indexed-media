@@ -13,12 +13,14 @@ the current media behavior and make its support limits explicit.
 
 ## Status and Artifacts
 
-- Status is in progress. On 2026-09-12 the user confirmed no compatibility and
+- Source-stage acceptance is complete. On 2026-09-12 the user confirmed no compatibility and
   explicitly approved implementation with `开始`; the reviewed existing task was
   activated with `task.py start`. Local source, example, CI-definition, test, and
   related guidance edits are authorized. On 2026-09-28 the user additionally
   approved the specific commit/push/draft-PR and CI follow-up proposal with `授权`.
-  Remote rename, merge, release, installation, and deployment remain separate.
+  The user subsequently authorized merge and confirmed it was completed; PR #1
+  was verified merged on 2026-09-28. Remote rename, release, installation, and
+  deployment remain separate.
 - [design.md](design.md) defines naming, invariants, migration, and rollback.
 - [implement.md](implement.md) defines ordered execution and verification.
 - implement.jsonl and check.jsonl contain curated spec/research context.
@@ -29,7 +31,10 @@ the current media behavior and make its support limits explicit.
   and [proposed commit/CI handoff](research/commit-plan.md). Source docs and
   delivery boundaries are reviewed; compiled/runtime acceptance passed in
   [CI run 36389841942](https://github.com/killbus/rulego-indexed-vod/actions/runs/36389841942).
-  [Draft PR #1](https://github.com/killbus/rulego-indexed-vod/pull/1) is ready for review.
+  [PR #1](https://github.com/killbus/rulego-indexed-vod/pull/1) is merged at
+  `9e8a9af461b486370962624fe16d874400851f72`; the merged-main
+  [CI run 36392005770](https://github.com/killbus/rulego-indexed-vod/actions/runs/36392005770)
+  also succeeded. See acceptance evidence for the next staged delivery work.
 
 ## Background
 

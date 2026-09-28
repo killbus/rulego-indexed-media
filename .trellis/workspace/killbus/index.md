@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
-- **Last Active**: 2026-08-28
+- **Total Sessions**: 3
+- **Last Active**: 2026-09-28
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~28 | Active |
+| `journal-1.md` | ~87 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-09-28 | Selected indexed-media tracks and real CI acceptance | `8b60a40`, `ee6df47`, `9a1abc7`, `93c04cf` | `feat/indexed-media-track-modes` |
+| 2 | 2026-09-28 | Complete indexed-media rename source stage | `d388152eb2feea64a04b32f413fa750c42425289`, `4c643afdc06cb56189cb506e7114a78cb88c9d8e` | `main` |
 | 1 | 2026-08-28 | Ship generic indexed VOD capability | `88434c8` | `main` |
 <!-- @@@/auto:session-history -->
 

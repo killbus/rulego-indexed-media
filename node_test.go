@@ -831,7 +831,7 @@ func (ctx *nodeResultContext) TellFailure(msg types.RuleMsg, _ error) {
 	ctx.output, ctx.relation = msg, types.Failure
 }
 
-func TestNodeRequiresPairedTracks(t *testing.T) {
+func TestNodeAcceptsSelectedTracks(t *testing.T) {
 	server := rangeServer(t, nil)
 	defer server.Close()
 	root := t.TempDir()
@@ -886,18 +886,8 @@ func TestNodeRequiresPairedTracks(t *testing.T) {
 				}
 				ctx := &nodeResultContext{}
 				node.OnMsg(ctx, types.NewMsgWithJsonData(string(body)))
-				if tracks == "paired" {
-					if ctx.relation != types.Success {
-						t.Fatalf("paired request relation=%q output=%s", ctx.relation, ctx.output.GetData())
-					}
-				} else {
-					var failure nodeError
-					if err := json.Unmarshal(ctx.output.GetBytes(), &failure); err != nil {
-						t.Fatal(err)
-					}
-					if ctx.relation != types.Failure || failure.Kind != "invalid_input" {
-						t.Fatalf("relation=%q failure=%#v", ctx.relation, failure)
-					}
+				if ctx.relation != types.Success {
+					t.Fatalf("selected request relation=%q output=%s", ctx.relation, ctx.output.GetData())
 				}
 			})
 		}

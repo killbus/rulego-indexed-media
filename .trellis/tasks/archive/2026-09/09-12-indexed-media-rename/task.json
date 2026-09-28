@@ -1,0 +1,31 @@
+{
+  "id": "indexed-media-rename",
+  "name": "indexed-media-rename",
+  "title": "Rename indexed VOD to indexed media",
+  "description": "Implement the approved breaking indexed-media rename while preserving bounded paired audio/video production and explicitly deferring single-track support.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "killbus",
+  "assignee": "killbus",
+  "createdAt": "2026-09-12",
+  "completedAt": "2026-09-28",
+  "branch": "feat/indexed-media-rename",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "d388152eb2feea64a04b32f413fa750c42425289",
+  "pr_url": "https://github.com/killbus/rulego-indexed-vod/pull/1",
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-09-12: user confirmed no compatibility and approved implementation with 开始. 2026-09-28: resumed with 继续推进; implementation, independent review and A0-A6 source acceptance completed. User authorized commit/push/PR/CI and subsequently merge; user completed the merge and remote verification confirmed PR #1 MERGED. Source d388152 and acceptance record 4c643af are included in merge 9e8a9af; merged-main CI run 36392005770 succeeded. Source-stage work is complete. Next delivery stage is hosted repository rename and a fresh release, followed by installation/rule cutover; these external stages remain separately authorized.",
+  "meta": {
+    "merge_commit": "9e8a9af461b486370962624fe16d874400851f72",
+    "merged_at": "2026-09-28T07:30:21Z",
+    "main_ci_url": "https://github.com/killbus/rulego-indexed-vod/actions/runs/36392005770",
+    "main_ci_conclusion": "success"
+  }
+}

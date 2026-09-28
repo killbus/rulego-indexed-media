@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -39,7 +41,7 @@ func (index mediaIndex) durationTicks() uint64 {
 }
 
 func (m *sourceManager) discoverIndex(ctx context.Context, format mediaRepresentation, requireSAP bool) (mediaIndex, error) {
-	probe, err := m.fetchRange(ctx, format, 0, initialIndexProbeBytes)
+	probe, err := m.fetchIndexProbe(ctx, format)
 	if err != nil {
 		return mediaIndex{}, err
 	}
@@ -183,6 +185,14 @@ func parseSIDX(raw []byte, absoluteOffset uint64, requireSAP bool) (mediaIndex, 
 }
 
 func (m *sourceManager) fetchRange(ctx context.Context, format mediaRepresentation, start, length uint64) ([]byte, error) {
+	return m.fetchIndexRange(ctx, format, start, length, false)
+}
+
+func (m *sourceManager) fetchIndexProbe(ctx context.Context, format mediaRepresentation) ([]byte, error) {
+	return m.fetchIndexRange(ctx, format, 0, initialIndexProbeBytes, true)
+}
+
+func (m *sourceManager) fetchIndexRange(ctx context.Context, format mediaRepresentation, start, length uint64, allowProbeEOF bool) ([]byte, error) {
 	if length == 0 || length > maxIndexBytes || start > math.MaxUint64-(length-1) {
 		return nil, problem("source_limit", "source range exceeded limit")
 	}
@@ -201,9 +211,52 @@ func (m *sourceManager) fetchRange(ctx context.Context, format mediaRepresentati
 			request.Header.Set(name, value)
 		}
 		return request, nil
-	}, int64(length), func(response *http.Response) bool {
-		return validRangeResponse(response, start, end)
+	}, int64(length), func(response *http.Response) (int64, bool) {
+		if validRangeResponse(response, start, end) {
+			return int64(length), true
+		}
+		if allowProbeEOF && start == 0 && length == initialIndexProbeBytes {
+			first, last, total, ok := responseRange(response)
+			if ok && first == 0 && total > 0 && total < initialIndexProbeBytes && last == total-1 {
+				return int64(total), true
+			}
+		}
+		return 0, false
 	})
+}
+
+var contentRangePattern = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)/([0-9]+|\*)$`)
+
+// A zero total represents the HTTP unknown-total form, never proven EOF.
+func responseRange(response *http.Response) (start, end, total uint64, ok bool) {
+	if response == nil || response.StatusCode != http.StatusPartialContent || response.Uncompressed {
+		return 0, 0, 0, false
+	}
+	if len(response.Header.Values("Content-Range")) != 1 {
+		return 0, 0, 0, false
+	}
+	for _, encoding := range response.Header.Values("Content-Encoding") {
+		if encoding != "" && !strings.EqualFold(encoding, "identity") {
+			return 0, 0, 0, false
+		}
+	}
+	fields := contentRangePattern.FindStringSubmatch(response.Header.Get("Content-Range"))
+	if fields == nil {
+		return 0, 0, 0, false
+	}
+	start, startErr := strconv.ParseUint(fields[1], 10, 64)
+	end, endErr := strconv.ParseUint(fields[2], 10, 64)
+	if startErr != nil || endErr != nil || end < start {
+		return 0, 0, 0, false
+	}
+	if fields[3] != "*" {
+		var err error
+		total, err = strconv.ParseUint(fields[3], 10, 64)
+		if err != nil || total <= end {
+			return 0, 0, 0, false
+		}
+	}
+	return start, end, total, true
 }
 
 func validHeader(name, value string) bool {

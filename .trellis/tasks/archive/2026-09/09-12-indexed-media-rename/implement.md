@@ -118,6 +118,15 @@ added for the rename are not evidence until executed successfully.
   authorized stages defined by design.md. No deployed-migration completion claim
   is allowed from local source checks or historical research alone.
 
+## Source-stage completion (2026-09-28)
+
+- [x] PR #1 merged at `9e8a9af461b486370962624fe16d874400851f72` after user
+  review and merge authorization.
+- [x] Merged-main CI run `36392005770` succeeded on the merge commit.
+- [x] Merge evidence and the remaining Stage 2/3 boundaries are recorded in
+  [acceptance evidence](research/acceptance-evidence.md). Source-stage acceptance
+  is complete and ready for Trellis archival and journal recording.
+
 ## Risk and rollback checkpoints
 
 - Node/plugin/graph and cache changes are one coherent review unit; partially

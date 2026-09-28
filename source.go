@@ -25,6 +25,13 @@ type sourceBundle struct {
 	revision string
 }
 
+func (bundle *sourceBundle) primaryIndex() mediaIndex {
+	if bundle.source.Video != nil {
+		return bundle.videoIdx
+	}
+	return bundle.audioIdx
+}
+
 type inspectCall struct {
 	done   chan struct{}
 	bundle *sourceBundle
@@ -79,13 +86,14 @@ func (m *sourceManager) Inspect(parent context.Context, request inspectRequest) 
 	if err != nil {
 		return inspectResult{}, err
 	}
-	segments := make([]segmentResult, len(bundle.videoIdx.Refs))
-	for index, ref := range bundle.videoIdx.Refs {
-		segments[index] = segmentResult{Duration: float64(ref.Duration) / float64(bundle.videoIdx.Timescale)}
+	primary := bundle.primaryIndex()
+	segments := make([]segmentResult, len(primary.Refs))
+	for index, ref := range primary.Refs {
+		segments[index] = segmentResult{Duration: float64(ref.Duration) / float64(primary.Timescale)}
 	}
 	return inspectResult{
 		Revision: bundle.revision,
-		Duration: float64(bundle.videoIdx.durationTicks()) / float64(bundle.videoIdx.Timescale),
+		Duration: float64(primary.durationTicks()) / float64(primary.Timescale),
 		Segments: segments,
 	}, nil
 }
@@ -103,6 +111,9 @@ func (m *sourceManager) operationContext(parent context.Context) (context.Contex
 }
 
 func (m *sourceManager) getBundle(ctx context.Context, source mediaLease) (*sourceBundle, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, contextProblem(err)
+	}
 	key := leaseKey(source)
 	m.mu.Lock()
 	if m.closed {
@@ -167,43 +178,53 @@ func (m *sourceManager) inspectSource(ctx context.Context, source mediaLease) (*
 	}
 	indexContext, cancel := context.WithCancel(ctx)
 	defer cancel()
-	results := make(chan indexResult, 2)
-	for index, representation := range []mediaRepresentation{source.Video, source.Audio} {
-		representation := representation
-		isVideo := index == 0
+	tracks := source.selectedTracks()
+	if len(tracks) == 0 {
+		return nil, problem("invalid_input", "no media tracks selected")
+	}
+	results := make(chan indexResult, len(tracks))
+	for _, track := range tracks {
 		go func() {
-			mediaIndex, err := m.discoverIndex(indexContext, representation, isVideo)
+			isVideo := track.role == "video"
+			mediaIndex, err := m.discoverIndex(indexContext, track.representation, isVideo)
 			results <- indexResult{index: mediaIndex, err: err, video: isVideo}
 		}()
 	}
-	first, second := <-results, <-results
-	if first.err != nil {
-		return nil, first.err
+	bundle := &sourceBundle{source: source}
+	for range tracks {
+		select {
+		case <-indexContext.Done():
+			return nil, contextProblem(indexContext.Err())
+		case result := <-results:
+			if result.err != nil {
+				return nil, result.err
+			}
+			if result.video {
+				bundle.videoIdx = result.index
+			} else {
+				bundle.audioIdx = result.index
+			}
+		}
 	}
-	if second.err != nil {
-		return nil, second.err
+	if err := indexContext.Err(); err != nil {
+		return nil, contextProblem(err)
 	}
-	videoIndex, audioIndex := first.index, second.index
-	if !first.video {
-		videoIndex, audioIndex = audioIndex, videoIndex
-	}
-	return &sourceBundle{
-		source: source, videoIdx: videoIndex, audioIdx: audioIndex,
-		revision: sourceRevision(source, videoIndex, audioIndex),
-	}, nil
+	bundle.revision = sourceRevision(source, bundle.videoIdx, bundle.audioIdx)
+	return bundle, nil
 }
 
-func (m *sourceManager) doHTTP(ctx context.Context, makeRequest func() (*http.Request, error), maxBytes int64, accept func(*http.Response) bool) ([]byte, error) {
+func (m *sourceManager) doHTTP(ctx context.Context, makeRequest func() (*http.Request, error), maxBytes int64, responseLength func(*http.Response) (int64, bool)) ([]byte, error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		request, err := makeRequest()
 		if err != nil {
 			return nil, problem("invalid_source", "source request is invalid")
 		}
 		response, requestErr := m.client.Do(request)
-		if requestErr == nil && response.StatusCode >= 200 && response.StatusCode < 300 && (accept == nil || accept(response)) {
+		expectedBytes, accepted := responseLength(response)
+		if requestErr == nil && accepted && expectedBytes > 0 && expectedBytes <= maxBytes {
 			body, readErr := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
 			_ = response.Body.Close()
-			if readErr == nil && int64(len(body)) == maxBytes {
+			if readErr == nil && int64(len(body)) == expectedBytes {
 				return body, nil
 			}
 			if int64(len(body)) > maxBytes {
@@ -247,6 +268,9 @@ func waitRetry(ctx context.Context, attempt int) error {
 }
 
 func sourceRevision(source mediaLease, videoIndex, audioIndex mediaIndex) string {
+	if source.Video == nil || source.Audio == nil {
+		return singleTrackRevision(source, videoIndex, audioIndex)
+	}
 	type facts struct {
 		SourceKey string              `json:"sourceKey"`
 		Video     representationFacts `json:"video"`
@@ -254,8 +278,8 @@ func sourceRevision(source mediaLease, videoIndex, audioIndex mediaIndex) string
 	}
 	encoded, _ := json.Marshal(facts{
 		SourceKey: source.SourceKey,
-		Video:     stableFacts(source.Video),
-		Audio:     stableFacts(source.Audio),
+		Video:     stableFacts(*source.Video),
+		Audio:     stableFacts(*source.Audio),
 	})
 	hash := sha256.New()
 	_, _ = hash.Write(encoded)
@@ -267,6 +291,32 @@ func sourceRevision(source mediaLease, videoIndex, audioIndex mediaIndex) string
 		_, _ = hash.Write(length[:])
 		_, _ = hash.Write(index.Raw)
 	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func singleTrackRevision(source mediaLease, videoIndex, audioIndex mediaIndex) string {
+	track := source.selectedTracks()[0]
+	index := videoIndex
+	if track.role == "audio" {
+		index = audioIndex
+	}
+	facts := struct {
+		SourceKey      string              `json:"sourceKey"`
+		Role           string              `json:"role"`
+		Representation representationFacts `json:"representation"`
+	}{source.SourceKey, track.role, stableFacts(track.representation)}
+	encoded, _ := json.Marshal(facts)
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("indexed-media-single-track-v1\x00"))
+	var length [8]byte
+	binary.BigEndian.PutUint64(length[:], uint64(len(encoded)))
+	_, _ = hash.Write(length[:])
+	_, _ = hash.Write(encoded)
+	binary.BigEndian.PutUint64(length[:], index.InitSize)
+	_, _ = hash.Write(length[:])
+	binary.BigEndian.PutUint64(length[:], uint64(len(index.Raw)))
+	_, _ = hash.Write(length[:])
+	_, _ = hash.Write(index.Raw)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 

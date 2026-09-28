@@ -11,7 +11,7 @@ ffoip_client_ref=ghcr.io/killbus/ffmpeg-over-ip-client@sha256:58b5061521d705e1bc
 : "${FFMPEG_PLUGIN:?set FFMPEG_PLUGIN to the verified ffmpeg-over-ip .so}"
 : "${ORIGIN_PLUGIN:?set ORIGIN_PLUGIN to the verified resource-origin .so}"
 
-for command in docker go curl jq sha256sum stat; do
+for command in docker go curl jq sha256sum stat python3; do
 	command -v "$command" >/dev/null || { printf 'missing command: %s\n' "$command" >&2; exit 1; }
 done
 for artifact in "$INDEXED_PLUGIN" "$FFMPEG_PLUGIN" "$ORIGIN_PLUGIN"; do
@@ -51,7 +51,7 @@ cleanup() {
 
 failed() {
 	status=$?
-	dump_logs
+	dump_logs 2>&1 | tee "$run_dir/failure.log" >&2 || true
 	cleanup
 	exit "$status"
 }
@@ -123,13 +123,28 @@ retry generate_fixture -y -f lavfi -i testsrc2=size=160x90:rate=30 -t 16 \
 	-movflags +dash+global_sidx -frag_duration 2000000 /work/video.mp4
 retry generate_fixture -y -f lavfi -i sine=frequency=1000:sample_rate=48000 -t 16 \
 	-vn -c:a aac -b:a 96k -movflags +dash+global_sidx -frag_duration 2000000 /work/audio.m4a
+retry generate_fixture -y -f lavfi -i sine=frequency=700:sample_rate=48000 -t 4 \
+	-vn -c:a aac -b:a 32k -movflags +dash+global_sidx -frag_duration 500000 /work/short-audio.m4a
 video_size=$(stat -c %s "$run_dir/video.mp4")
 audio_size=$(stat -c %s "$run_dir/audio.m4a")
 
 CGO_ENABLED=0 go build -trimpath -o "$run_dir/fixture-server" "$root/tests/e2e/fixture-server.go"
+CGO_ENABLED=0 go build -trimpath -o "$run_dir/media-tool" "$root/tests/e2e/media-tool/main.go"
 chmod 0755 "$run_dir/fixture-server"
+chmod 0755 "$run_dir/media-tool"
+printf 'Checking JSON FFprobe support in the pinned FFmpeg service\n'
+docker run --rm --network "$network" -v "$run_dir:/work" --entrypoint /work/media-tool \
+	"$runtime_ref" -program ffprobe -- -v error -show_program_version -of json \
+	>"$run_dir/ffprobe-version.json"
+jq -e '.program_version.version | length > 0' "$run_dir/ffprobe-version.json" >/dev/null
 docker run --rm --user 65532:65532 -v "$run_dir:/work" --entrypoint /work/fixture-server \
 	"$runtime_ref" -dir /work -normalize-video-sap
+python3 "$root/tests/e2e/track_modes.py" prepare "$run_dir"
+{
+	git -C "$root" rev-parse HEAD
+	printf '%s\n' "$runtime_ref" "$ffoip_server_ref" "$ffoip_client_ref"
+	sha256sum "$INDEXED_PLUGIN" "$FFMPEG_PLUGIN" "$ORIGIN_PLUGIN"
+} >"$run_dir/artifact-identity.txt"
 
 docker run --rm --detach --name "$fixture_container" --network "$network" --network-alias ytdlp \
 	-p 127.0.0.1::8080 -v "$run_dir:/work:ro" --entrypoint /work/fixture-server \
@@ -335,6 +350,15 @@ test "$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$rulego_url$e
 curl --fail --silent --show-error "http://127.0.0.1:${fixture_port}/stats" >"$run_dir/stats-expired.json"
 test "$(jq '[.requests[] | select(.path == "/video.mp4" or .path == "/audio.m4a")] | length' "$run_dir/stats-expired.json")" -eq "$expiry_media_requests"
 assert_bounded_ranges "$run_dir/stats-expired.json" "$video_size" "$audio_size"
+
+# Direct test-only composition keeps provider policy and paired lifecycle
+# regressions above unchanged. Each production receives origin-issued limits.
+curl --fail --silent --show-error -H 'Content-Type: application/json' \
+	--data-binary @"$root/tests/e2e/track-modes-chain.json" \
+	"$rulego_url/api/v1/rules/indexed-media-acceptance" >/dev/null
+python3 "$root/tests/e2e/track_modes.py" run "$run_dir" \
+	--rulego "$rulego_url" --fixture "http://127.0.0.1:${fixture_port}" \
+	--network "$network" --runtime "$runtime_ref"
 
 sed 's#^resource_mapping = /resources/#resource_mapping = /broken/#' \
 	"$run_dir/config.conf" >"$run_dir/broken-config.conf"

@@ -30,7 +30,9 @@ jobs:
             (.sdk | test("^ghcr\\.io/killbus/rulego-plugin-sdk@sha256:[0-9a-f]{64}$")) and
             (.runtime | test("^ghcr\\.io/killbus/rulego-server@sha256:[0-9a-f]{64}$"))
           ' plugin-abi-release.json
-          jq -e . examples/youtube-hls/chain.json testdata/*.json >/dev/null
+          jq -e . examples/youtube-hls/chain.json testdata/*.json tests/e2e/*.json >/dev/null
+          bash -n tests/e2e-hls-seek.sh
+          python3 -m py_compile tests/e2e/track_modes.py
       - run: go mod download
       - name: Verify source module identity
         run: test "$(go list -m)" = "github.com/killbus/rulego-indexed-media"
@@ -39,6 +41,8 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go test -race ./...
+      - name: Check media acceptance assertions
+        run: python3 -m unittest discover -s tests/e2e -p 'test_*.py'
 
   build:
     strategy:
@@ -172,7 +176,7 @@ jobs:
           if-no-files-found: error
 
   e2e-hls-seek:
-    name: Hermetic HLS seek
+    name: Hermetic selected-track TS and HLS seek
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -228,13 +232,49 @@ jobs:
             echo "FFMPEG_PLUGIN=$GITHUB_WORKSPACE/tmp/peers/$ffmpeg_artifact"
             echo "ORIGIN_PLUGIN=$GITHUB_WORKSPACE/tmp/peers/$origin_artifact"
           } >> "$GITHUB_ENV"
-      - name: Run real indexed HLS path
+      - name: Run real indexed track modes and paired lifecycle
         run: tests/e2e-hls-seek.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: indexed-media-track-evidence
+          path: |
+            tmp/e2e-hls.*/artifact-identity.txt
+            tmp/e2e-hls.*/ffprobe-version.json
+            tmp/e2e-hls.*/track-evidence/
+            tmp/e2e-hls.*/playlists/
+          if-no-files-found: warn
+      - name: Collect readable HLS debug files
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          suffixes = {
+              ".bin", ".conf", ".headers", ".json", ".log",
+              ".m3u8", ".m4a", ".mp4", ".ts", ".txt",
+          }
+          for run_dir in Path("tmp").glob("e2e-hls.*"):
+              if run_dir.is_symlink() or not run_dir.is_dir():
+                  continue
+              destination = Path("tmp/e2e-hls-debug") / run_dir.name
+              destination.mkdir(parents=True, exist_ok=True)
+              # Only inspect direct children. Runtime data may contain private
+              # directories; never recurse into them or follow symlinks.
+              for source in run_dir.iterdir():
+                  if source.suffix not in suffixes or source.is_symlink() or not source.is_file():
+                      continue
+                  try:
+                      shutil.copyfile(source, destination / source.name)
+                  except OSError as error:
+                      print(f"Skipping unreadable debug file {source}: {error}")
+          PY
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: e2e-hls-seek-debug
-          path: tmp/e2e-hls.*/
+          path: tmp/e2e-hls-debug/
           if-no-files-found: ignore
 
   release-metadata:
