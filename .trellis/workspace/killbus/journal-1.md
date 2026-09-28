@@ -48,3 +48,40 @@ Completed and independently reviewed the breaking indexedMedia rename with paire
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: Selected indexed-media tracks and real CI acceptance
+
+**Date**: 2026-09-28
+**Task**: Selected indexed-media tracks and real CI acceptance
+**Branch**: `feat/indexed-media-track-modes`
+
+### Summary
+
+Implemented optional video-only, audio-only and paired TS production; owning CI 36408640108 passed all A1-A5 acceptance after evidence-driven AAC probe and bounded HLS seek fixes.
+
+### Main Changes
+
+- Preserved paired revisions and trimming; isolated selected tracks, leases and bounded EOF probes.
+- Retained strict real-media timing checks and readable CI diagnostics; archived the completed Trellis task.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8b60a40` | (see git log) |
+| `ee6df47` | (see git log) |
+| `9a1abc7` | (see git log) |
+| `93c04cf` | (see git log) |
+
+### Testing
+
+- [OK] Formatting, vet, unit/race, 32 Python controls, amd64/arm64 ABI owner-ref smoke and full TS/HLS lifecycle passed. Downloaded media evidence and both plugin checksums/ABI verified.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Push final records on the existing feature branch, verify final PR CI, then squash merge PR #2. No release or deployment.
