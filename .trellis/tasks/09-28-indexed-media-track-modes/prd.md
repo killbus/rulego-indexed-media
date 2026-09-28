@@ -97,9 +97,10 @@ enables audio listening and silent-video use without fetching an unwanted track.
 
 The user confirmed the final PRD/design/execution review on 2026-09-28, and
 task.py start activated this task. Implementation, documentation, independent
-source review, and local static checks are complete. Commit `8b60a40` was pushed
-and PR #2 opened against main. The first owning-CI run passed compiled tests and
-both-architecture build/smoke; real-media acceptance stopped on an AAC probe
-duration assumption, and debug upload hit a private-directory permission error.
-Harness fixes and a new CI run remain required. See research/acceptance-evidence.md;
+source review, and local static checks are complete. PR #2 targets main on the
+feature branch. Run 36405654696 at `ee6df47` passed compiled tests, architecture
+build/smoke, AAC probe inference, debug uploads, and video-only/audio-only
+acceptance. Paired direct HLS seek lost audio frames present in the member; a
+bounded seek pre-roll correction and a new CI run remain required. Short-audio
+and remaining lifecycle checks are pending. See research/acceptance-evidence.md;
 this task is not completed or archived.

@@ -99,9 +99,10 @@ and deployment remain outside this task.
   commands and CI/artifact identity. Distinguish unavailable, failed, and passed
   checks. Actual media evidence is required for capability completion.
 - [ ] Complete owning CI against the committed candidate and record compiled,
-  architecture, and actual-media results. Run 36402240660 passed compiled and
-  architecture checks but failed real-media acceptance and debug upload; see
-  research/acceptance-evidence.md for the exact source/artifact and failures.
+  architecture, and actual-media results. Run 36405654696 passed compiled and
+  architecture checks, repaired AAC evidence/debug uploads, and both single
+  modes. Paired direct seek needs bounded pre-roll; short-audio and remaining
+  lifecycle checks are pending. See research/acceptance-evidence.md.
 - [ ] Complete spec review, commit/handoff and task completion per workflow.
 
 ## Risk and rollback checkpoints

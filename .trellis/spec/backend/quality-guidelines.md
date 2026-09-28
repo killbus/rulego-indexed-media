@@ -153,6 +153,14 @@ refresh representation URLs or headers.
   duration to equal 1024 samples, and every DTS step to equal 1024 samples.
   Derive from the next DTS; preserve the raw probe and record the derivation
   separately in `*-duration-derivations.json`. Never enlarge timing tolerances.
+- HLS acceptance seeks to the preceding primary member, still in the latter
+  half of the fixture, to preserve audio emitted before the sought video
+  keyframe in demux order. Bound pre-roll to that member's actual duration.
+  Use input `-ss` in playlist time, `-copyts`, output `trim`/`atrim` at the
+  requested absolute source start, and `-to` at source start + 1 second. Do not
+  reset PTS or widen position/coverage/continuity tolerances. Full member
+  decodes remain untrimmed. Save `*-seek-request.json` with both clocks, member
+  numbers, pre-roll duration, and exact arguments before remote decoding.
 - On E2E failure, save diagnostics before container cleanup and retain the
   original exit status even if log writing fails. Upload debug files through
   the readable `tmp/e2e-hls-debug/` snapshot, containing only allowed regular
@@ -195,6 +203,9 @@ refresh representation URLs or headers.
 - Valid omitted companion -> inspect/produce only the selected track.
 - Missing video/interior/final/multiple packet durations, unsupported sample
   clock/profile, or inconsistent AAC cadence -> fail CI evidence validation.
+- Seek input before the latter half, no preceding member, or less than one
+  second after the target -> reject the fixture; wrong source position or
+  missing decoded coverage still fails after bounded pre-roll.
 - Unreadable debug file -> log and skip that file; a private runtime directory
   is never traversed. Debug collection must not turn the test failure into a pass.
 - HTTP 200, invalid Content-Range, encoded/oversized body, or short response without
@@ -219,6 +230,10 @@ refresh representation URLs or headers.
 - Good: a first AAC duration omission is corroborated by the entire fixture's
   sample clock and recorded without rewriting raw FFprobe output.
 - Bad: filling every absent packet duration with a codec constant or zero.
+- Good: for source start 4 and two-second members, seek to playlist time 10,
+  trim retained timestamps at source time 16, and stop at source time 17.
+- Bad: accepting late audio after a video-keyframe seek by enlarging the
+  tolerance, or replacing a distant seek with decoding from the beginning.
 - Bad: a new session/plugin owner is introduced only to retain resolver output,
   or a cache lookup by `sourceKey` returns old signed URLs for a new lease.
 
@@ -260,6 +275,10 @@ refresh representation URLs or headers.
   clocks. Assert raw probe preservation and separately persisted derivations.
 - Check debug collection with inaccessible runtime children and symlinks, and
   preserve the failed command's exit status when diagnostic writing fails.
+- Verify seek pre-roll for unequal member durations, zero/nonzero starts, and
+  short audio. Assert selected maps/filters, distinct clocks, untrimmed full
+  decodes, early request evidence, and rejection of the observed paired audio
+  loss. The constructed command must also pass the owning real-media CI.
 
 ### 7. Wrong vs Correct
 

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from track_modes import Acceptance, check_seek, decoded_frames, packet_groups, shifted_fixture
+from track_modes import Acceptance, check_seek, decoded_frames, packet_groups, seek_geometry, shifted_fixture
 
 
 class MediaEvidenceTests(unittest.TestCase):
@@ -211,6 +211,102 @@ class AACDurationEvidenceTests(unittest.TestCase):
             self.assertEqual(derived["audio"][0]["duration_ticks"], 1024)
 
 
+class SeekCommandTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.runner = object.__new__(Acceptance)
+        self.runner.evidence = Path(directory.name)
+        self.refs = [dict(start=4000 + 2000 * i, duration=2000) for i in range(8)]
+
+    def test_one_preceding_member_stays_distant_and_uses_distinct_clocks(self):
+        geometry = seek_geometry(self.refs, 1000, 6)
+        self.assertEqual(geometry, dict(target_member=6, input_member=5,
+                                       requested_playlist_seek=12, input_playlist_seek=10,
+                                       input_source_start=14, source_start=16, source_stop=17,
+                                       preroll_duration=2))
+
+    def test_preroll_uses_actual_member_duration_including_short_audio(self):
+        for durations, target, input_seek, requested_seek, preroll in (
+                ([1000, 2000, 1500, 500, 2500, 3000, 1000, 1000], 6,
+                 Fraction(15, 2), Fraction(21, 2), Fraction(3)),
+                ([512] * 7 + [437], 5, Fraction(256, 125), Fraction(64, 25), Fraction(64, 125))):
+            with self.subTest(durations=durations):
+                refs, start = [], 4000
+                for duration in durations:
+                    refs.append(dict(start=start, duration=duration))
+                    start += duration
+                geometry = seek_geometry(refs, 1000, target)
+                self.assertEqual(geometry["input_playlist_seek"], input_seek)
+                self.assertEqual(geometry["requested_playlist_seek"], requested_seek)
+                self.assertEqual(geometry["source_start"], requested_seek + 4)
+                self.assertEqual(geometry["preroll_duration"], preroll)
+                self.assertEqual(geometry["input_member"], target - 1)
+
+    def test_early_or_truncated_seek_is_rejected(self):
+        for target in (0, 1, 4, 8):
+            with self.subTest(target=target), self.assertRaises(AssertionError):
+                seek_geometry(self.refs, 1000, target)
+        self.refs[-1]["duration"] = 400
+        with self.assertRaisesRegex(AssertionError, "lacks one second"):
+            seek_geometry(self.refs, 1000, 7)
+
+    def test_seek_command_prerolls_then_trims_on_source_clock_without_rebasing(self):
+        for roles in (["video"], ["audio"], ["video", "audio"]):
+            for origin in (0, 4000):
+                with self.subTest(roles=roles, origin=origin):
+                    refs = [dict(start=origin + 2000 * i, duration=2000) for i in range(8)]
+                    geometry = seek_geometry(refs, 1000, 6)
+                    start = geometry["source_start"]
+                    output = "".join(f"#media_type {i}: {role}\n#tb {i}: 1/48000\n"
+                                     f"{i}, {start * 48000}, {start * 48000}, 1024, 2048, abc\n"
+                                     for i, role in enumerate(roles))
+                    with patch.object(self.runner, "remote", return_value=output) as remote:
+                        frames = self.runner.decode("http://fixture/paired.m3u8", roles, "seek", seek=geometry)
+                    program, args, _ = remote.call_args.args
+                    self.assertEqual(program, "ffmpeg")
+                    self.assertIn("-copyts", args)
+                    self.assertEqual(args.count("-ss"), 1)
+                    self.assertLess(args.index("-ss"), args.index("-i"))
+                    self.assertEqual(args[args.index("-ss") + 1], "10.0")
+                    self.assertGreater(args.index("-to"), args.index("-i"))
+                    self.assertEqual(args[args.index("-to") + 1], str(float(start + 1)))
+                    self.assertNotIn("-t", args)
+                    self.assertNotIn("-start_at_zero", args)
+                    self.assertNotIn("setpts", " ".join(args))
+                    self.assertEqual([args[i + 1] for i, arg in enumerate(args) if arg == "-map"],
+                                     ["0:v:0" if role == "video" else "0:a:0" for role in roles])
+                    for role, option, name in (("video", "-vf", "trim"), ("audio", "-af", "atrim")):
+                        if role in roles:
+                            self.assertEqual(args[args.index(option) + 1], f"{name}=start={float(start)}")
+                            self.assertEqual(frames[role][0]["pts"], start)
+                        else:
+                            self.assertNotIn(option, args)
+
+    def test_seek_request_is_saved_before_remote_work_or_decode_validation(self):
+        geometry = seek_geometry(self.refs, 1000, 6)
+
+        def empty_decode(program, args, label):
+            saved = json.loads((self.runner.evidence / (label + "-request.json")).read_text())
+            self.assertEqual(saved["geometry"]["source_start"], "16")
+            self.assertEqual(saved["geometry"]["input_playlist_seek"], "10")
+            self.assertEqual(saved["geometry"]["target_member"], 6)
+            self.assertEqual(saved["args"], args)
+            return ""
+
+        with patch.object(self.runner, "remote", side_effect=empty_decode):
+            with self.assertRaisesRegex(AssertionError, "decode did not emit"):
+                self.runner.decode("http://fixture/paired.m3u8", ["video", "audio"], "seek", seek=geometry)
+
+    def test_full_member_decode_has_no_seek_or_trim(self):
+        output = "#media_type 0: audio\n#tb 0: 1/48000\n0, 192000, 192000, 1024, 2048, abc\n"
+        with patch.object(self.runner, "remote", return_value=output) as remote:
+            self.runner.decode("/work/6.ts", ["audio"], "member")
+        args = remote.call_args.args[1]
+        for option in ("-ss", "-to", "-af", "-vf"):
+            self.assertNotIn(option, args)
+
+
 class SeekEvidenceTests(unittest.TestCase):
     def setUp(self):
         self.sources = {"video": {"quantum": Fraction(1, 30)},
@@ -241,6 +337,16 @@ class SeekEvidenceTests(unittest.TestCase):
     def test_truncated_seek_is_rejected(self):
         del self.frames["audio"][-3:]
         with self.assertRaisesRegex(AssertionError, "ended at the wrong source position"):
+            self.check()
+
+    def test_paired_audio_demux_seek_loss_is_rejected_even_when_video_is_correct(self):
+        # CI 36405654696: audio starts at 16.053333 and covers only 0.96 s,
+        # although the video covers the requested 16..17 s exactly.
+        quantum = self.sources["audio"]["quantum"]
+        self.frames["audio"] = [dict(pts=16 + Fraction(4, 75) + i * quantum,
+                                     dts=16 + Fraction(4, 75) + i * quantum, duration=quantum)
+                                for i in range(45)]
+        with self.assertRaisesRegex(AssertionError, "audio: HLS seek reached the wrong source position"):
             self.check()
 
     def test_internal_gap_is_rejected_with_valid_endpoints(self):

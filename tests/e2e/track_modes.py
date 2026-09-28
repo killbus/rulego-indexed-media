@@ -197,6 +197,21 @@ def check_seek(frames, roles, sources, start, duration=Fraction(1)):
     return summary
 
 
+def seek_geometry(refs, scale, target):
+    """Seek one member early, then retain one second on the source clock."""
+    require(0 < target < len(refs), "seek target needs a preceding member")
+    input_member = target - 1
+    require(input_member >= len(refs) // 2, "fixture too short for a distant seek with one-member preroll")
+    require(sum(r["duration"] for r in refs[target:]) >= scale, "seek target lacks one second of media")
+    start = Fraction(refs[target]["start"], scale)
+    return dict(target_member=target, input_member=input_member,
+                requested_playlist_seek=Fraction(sum(r["duration"] for r in refs[:target]), scale),
+                input_playlist_seek=Fraction(sum(r["duration"] for r in refs[:input_member]), scale),
+                input_source_start=Fraction(refs[input_member]["start"], scale),
+                source_start=start, source_stop=start + 1,
+                preroll_duration=Fraction(refs[input_member]["duration"], scale))
+
+
 class Acceptance:
     def __init__(self, args):
         self.directory = args.directory.resolve()
@@ -224,23 +239,30 @@ class Acceptance:
              {role: group["duration_derivations"] for role, group in groups.items()})
         return value
 
-    def decode(self, source, roles, label, seek=None, stop=None):
+    def decode(self, source, roles, label, seek=None):
         args = ["-hide_banner", "-loglevel", "error", "-xerror", "-copyts"]
         if seek is not None:
-            require(stop is not None, "seek decoding needs a source-timeline stop")
-            args += ["-ss", str(float(seek))]
+            args += ["-ss", str(float(seek["input_playlist_seek"]))]
         args += ["-i", source]
         if seek is not None:
             # copyts retains the nonzero source timeline. An output -t 1
             # would stop at timestamp 1; stop at the absolute source end.
-            args += ["-to", str(float(stop))]
+            args += ["-to", str(float(seek["source_stop"]))]
         for role in roles:
             args += ["-map", "0:v:0" if role == "video" else "0:a:0"]
+            if seek is not None:
+                # HLS seeking to a video keyframe can discard AAC packets
+                # before it in demux order, even when their PTS is later. Read
+                # the preceding member, then trim without rebasing timestamps.
+                option, filter_name = ("-vf", "trim") if role == "video" else ("-af", "atrim")
+                args += [option, filter_name + "=start=" + str(float(seek["source_start"]))]
         if "video" in roles:
             args += ["-fps_mode", "passthrough", "-c:v", "rawvideo"]
         if "audio" in roles:
             args += ["-c:a", "pcm_s16le"]
         args += ["-f", "framehash", "pipe:1"]
+        if seek is not None:
+            save(self.evidence / (label + "-request.json"), dict(geometry=seek, roles=roles, args=args))
         output = self.remote("ffmpeg", args, label)
         (self.evidence / (label + ".framehash")).write_text(output, encoding="utf-8")
         return decoded_frames(output, roles)
@@ -350,6 +372,7 @@ class Acceptance:
         while sum(r["duration"] for r in refs[target:]) < scale:
             target -= 1
         require(target >= len(refs) // 2, "fixture too short for a distant one-second seek")
+        geometry = seek_geometry(refs, scale, target)
         selected = {0, target, target + 1, len(refs) - 1}
         summaries, urls = {}, []
         for number, ref in enumerate(refs):
@@ -396,10 +419,10 @@ class Acceptance:
             lines += [f"#EXTINF:{ref['duration'] / scale:.9f},", url]
         lines.append("#EXT-X-ENDLIST")
         (self.directory / "playlists" / (selection + ".m3u8")).write_text("\n".join(lines) + "\n", encoding="utf-8")
-        seek = Fraction(sum(r["duration"] for r in refs[:target]), scale)
-        seek_start = Fraction(refs[target]["start"], scale)
+        seek = geometry["requested_playlist_seek"]
+        seek_start = geometry["source_start"]
         frames = self.decode(f"http://ytdlp:8080/playlists/{selection}.m3u8", roles, selection + "-seek",
-                             seek, seek_start + 1)
+                             seek=geometry)
         seek_summary = check_seek(frames, roles, sources, seek_start)
         after = self.request(self.fixture + "/stats")["requests"]
         requests = after[len(before):]
@@ -422,7 +445,7 @@ class Acceptance:
             require(any(r["range"] == "bytes=0-65535" for r in requests), "short fixture never exercised discovery")
         save(self.evidence / (selection + "-timing.json"),
              dict(members=summaries, seek=seek, seek_source_start=seek_start,
-                  seek_decoded=seek_summary, revision=inspect["revision"]))
+                  seek_geometry=geometry, seek_decoded=seek_summary, revision=inspect["revision"]))
         return inspect["revision"]
 
     def run(self):

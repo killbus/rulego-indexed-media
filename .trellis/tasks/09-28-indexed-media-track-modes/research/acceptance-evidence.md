@@ -111,6 +111,52 @@ in_progress, with A2/A4/A5 runtime acceptance incomplete.
   and the captured video framehash, plus debug-collector negative controls.
 - These local repair checks do not replace the next actual-media CI run.
 
+## Second owning-CI execution
+
+Run: https://github.com/killbus/rulego-indexed-vod/actions/runs/36405654696
+
+- PR head: `ee6df47f861599d2bc921106a4c49762ab54376f`; runtime merge checkout:
+  `fb12c550a29b5d55d7364adac86db3d9c7ea43a5`. The amd64 plugin checksum remains
+  `3c2e8d711392eabcf08349c570d11411f494fd9aaa6aaa9b48aebd2cc6fa21dc`.
+- PASS: formatting, vet, unit/race, 25 Python controls, both architecture
+  builds/ABI/owner-ref smoke, release metadata, media evidence upload, readable
+  debug collection, and debug upload. Both first-run failures are resolved.
+- PASS: video-only and audio-only member, timestamp, distant HLS seek, and
+  isolated network checks. Video seek decodes 30 frames at source time 16..17;
+  audio seek decodes 47 frames at 16.032..17.034666667.
+- PASS before failure: paired first/distant/final member checks and adjacency.
+  Member 6 decodes all 60 video frames at 16..18 and 94 audio frames at
+  15.989333333..17.994666667; member 7 audio starts at 17.994666667.
+- FAIL: direct paired HLS seek at playlist offset 12 decodes video at 16..17,
+  but only 45 audio frames at 16.053333333..17.013333333 (0.96 seconds).
+  `paired-6.json` reports the first three audio packets before the video
+  keyframe in demux order; those packets are present in the member decode but
+  absent after the direct seek. The assertion correctly rejects this loss.
+- The short-audio mode and subsequent paired lifecycle checks have not yet
+  executed. This run does not establish complete A2/A4/A5 acceptance.
+
+The next harness correction must use bounded distant pre-roll before the
+requested source interval, preserve timestamps, and retain the strict
+position/coverage/continuity assertions. It must not relax tolerances or decode
+the entire playlist from its beginning. Actual behavior still needs owning CI.
+
+Second repair local validation:
+
+- PASS: 32 Python controls, including bounded pre-roll with actual unequal
+  member durations, nonzero/zero source clocks, short audio, selected maps and
+  filters, saved request evidence before remote work, and untrimmed full-member
+  decoding. The observed late paired audio still fails the strict oracle.
+- PASS: geometry replay against every saved source index, Python AST/JSON and
+  changed-file text hygiene, task context validation, and `git diff --check`.
+- Production code and packet/seek timing tolerances are unchanged. The corrected
+  FFmpeg command still requires actual-media CI; local controls are not runtime
+  acceptance.
+- PASS: independent Trellis review of all nine changed files found no confirmed
+  defects. It replayed authentic seeks and short-audio geometry: target member
+  5, input member 4 at playlist offset 2.048, source interval 6.56..7.56, and
+  0.512 seconds of pre-roll. The saved command establishes requested seek
+  geometry; fixture statistics do not establish HLS member-fetch order.
+
 ## Runtime validation still required
 
 Per the approved execution plan, owning CI must run go vet, unit tests, race

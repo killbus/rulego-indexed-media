@@ -41,6 +41,23 @@ paired audio adjacency permits one AAC frame of trimming overlap; single-track
 adjacency permits two TS rounding ticks. There are no arbitrary second-based
 timing allowances.
 
+Seeking starts from the immediately preceding primary-index member, still in
+the latter half of the fixture, to let the demuxer and decoder read ahead to
+the requested boundary. In CI run `36405654696`, seeking exactly to a paired
+video boundary decoded video at 16..17 s but began audio at 16.053333 s; the
+full member contained audio from 15.989333 s. Its first three AAC packets
+preceded the selected video keyframe in demux order, even though two had later
+timestamps. The harness uses the preceding member's playlist
+offset for input `-ss`, then `trim`/`atrim` at the requested absolute source
+time and `-to` at its one-second end. These filters preserve timestamps; no
+PTS reset is applied. Preroll is bounded to one indexed member, using its
+actual duration. Full member decodes remain untrimmed. The unchanged seek
+checks reject late audio, missing coverage, gaps, and wrong source positions.
+Each `*-seek-request.json` saves both playlist offsets, both source positions,
+member numbers, preroll duration, and the exact FFmpeg arguments before remote
+decoding or validation, so failures retain the requested seek geometry. The
+corrected command still requires actual-media validation in owning CI.
+
 The pinned FFprobe in CI run `36402240660` omitted `duration` only for the first
 packet of `original-audio.m4a`. Its next DTS was 1024 samples later; all 750
 remaining packets declared 1024 samples, with the same DTS cadence and PTS=DTS.

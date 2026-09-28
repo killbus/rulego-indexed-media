@@ -26,6 +26,25 @@ This repair preserves production code and timing tolerances. Recheck the staged
 list before committing; do not include downloaded CI artifacts. Push the repair
 to the existing PR and rerun owning CI. Runtime acceptance remains incomplete.
 
+The first repair was committed and pushed as `ee6df47`. Second-run CI repairs
+form one additional commit under the existing continuation/push authorization:
+`fix: preserve audio coverage in distant HLS seek checks`.
+
+- tests/e2e/track_modes.py
+- tests/e2e/test_track_modes.py
+- tests/e2e/README.md
+- .trellis/spec/backend/quality-guidelines.md
+- .trellis/tasks/09-28-indexed-media-track-modes/task.json
+- .trellis/tasks/09-28-indexed-media-track-modes/prd.md
+- .trellis/tasks/09-28-indexed-media-track-modes/implement.md
+- .trellis/tasks/09-28-indexed-media-track-modes/research/acceptance-evidence.md
+- .trellis/tasks/09-28-indexed-media-track-modes/research/commit-plan.md
+
+This correction adds one indexed member of distant pre-roll and timestamp-
+preserving trim, retaining strict timing assertions. Stage only these reviewed
+paths after the checks; do not include downloaded evidence. Push to the same
+feature branch and verify actual-media CI before the planned squash merge.
+
 ## Initial proposal (historical)
 
 Prepared for the workflow Phase 3.4 review. This file is a proposal, not approval
