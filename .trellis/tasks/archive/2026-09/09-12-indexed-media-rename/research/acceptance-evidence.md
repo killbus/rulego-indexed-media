@@ -8,8 +8,8 @@
 - Baseline HEAD: `ab2217bccb46b8ca854b778ef82cd805e6941cb9`. Source commit:
   `d388152eb2feea64a04b32f413fa750c42425289`.
 - The local checks below preceded the source commit. Owning CI subsequently
-  passed; see the run and artifact evidence below. The task remains open for
-  draft PR review and Trellis wrap-up, without implying merge or deployment.
+  passed, PR #1 was merged, and merged-main CI passed. See the run, artifact,
+  and merge evidence below. Source acceptance does not imply deployment.
 
 ## Local verification
 
@@ -78,7 +78,7 @@ the separately verified hosted rename.
 
 ## CI and external acceptance
 
-- Draft PR: https://github.com/killbus/rulego-indexed-vod/pull/1
+- PR (now merged): https://github.com/killbus/rulego-indexed-vod/pull/1
 - CI: https://github.com/killbus/rulego-indexed-vod/actions/runs/36389841942
 - Event: `pull_request`; reported head SHA:
   `d388152eb2feea64a04b32f413fa750c42425289`.
@@ -114,7 +114,36 @@ inside their owning build jobs.
 | plugin-linux-arm64 | 10956450495 | `b76f6078bae4be7a5bf53f2ed5525c80e74615a4bc3ceecb0e05e5080261e7e7` |
 | release-metadata | 10956370667 | `de88f90b7c16e44df3d95595ca5bb9d2ba2d281220c0322fb002bad0b71a0d54` |
 
-A0-A6 are accepted for this source stage. The source commit is pushed and the
-draft PR is ready for review. Merge, hosted rename, release, installation, and
-deployment have not been performed. Task archival and journal wrap-up remain
-separate from this draft-PR handoff.
+## Merge and source-stage completion (2026-09-28)
+
+- The user authorized merge and then reported `merged。`. Remote verification
+  confirmed PR #1 is `MERGED`, with `mergedAt=2026-09-28T07:30:21Z`.
+- Merge commit: `9e8a9af461b486370962624fe16d874400851f72`. Both source commit
+  `d388152eb2feea64a04b32f413fa750c42425289` and acceptance-record commit
+  `4c643afdc06cb56189cb506e7114a78cb88c9d8e` are preserved in its history.
+- The documentation-head [CI run 36390736160](https://github.com/killbus/rulego-indexed-vod/actions/runs/36390736160)
+  passed before merge.
+- Merged-main [CI run 36392005770](https://github.com/killbus/rulego-indexed-vod/actions/runs/36392005770):
+  `event=push`, `headSha=9e8a9af461b486370962624fe16d874400851f72`,
+  `status=completed`, `conclusion=success`, verified through the GitHub API.
+- Before Trellis bookkeeping, local `main` and `origin/main` both pointed to
+  the merge commit and the working tree was clean.
+
+A0-A6 are accepted and Stage 1 is complete. No source implementation, review,
+merge, or CI gate remains open. The artifact table above identifies the original
+source CI run; it is not a claim that a release has been published.
+
+## Next delivery stages
+
+Follow [the staged cutover design](../design.md#downstream-ownership-and-staged-cutover):
+
+1. Stage 2: confirm availability of `killbus/rulego-indexed-media`, rename the
+   hosted repository, verify the new URL, reconcile remotes/automation, and then
+   update engineering ownership guidance. Select a fresh release version and
+   publish the exact tested candidate artifacts without overwriting an old release.
+2. Stage 3: inventory actual plugin installations, download automation, node
+   pools, saved/exported rules, and editor templates; deploy matched artifacts,
+   sidecars, and rules, then verify registry/references and bounded paired playback.
+
+These external actions remain separately authorized and have not been performed.
+The existing indexed-audio/single-track work remains independent.
