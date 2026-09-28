@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,9 +46,67 @@ type indexedMediaNode struct {
 }
 
 type mediaLease struct {
-	SourceKey string              `json:"sourceKey"`
-	Video     mediaRepresentation `json:"video"`
-	Audio     mediaRepresentation `json:"audio"`
+	SourceKey string               `json:"sourceKey"`
+	Video     *mediaRepresentation `json:"video,omitempty"`
+	Audio     *mediaRepresentation `json:"audio,omitempty"`
+}
+
+// Decode each supplied track strictly: omission is the only absent-track form.
+func (source *mediaLease) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		SourceKey string                 `json:"sourceKey"`
+		Video     suppliedRepresentation `json:"video"`
+		Audio     suppliedRepresentation `json:"audio"`
+	}
+	if err := decodeStrictJSON(data, &wire); err != nil {
+		return err
+	}
+	*source = mediaLease{SourceKey: wire.SourceKey, Video: wire.Video.value, Audio: wire.Audio.value}
+	return nil
+}
+
+// Decode supplied values immediately so repeated JSON keys cannot hide a
+// malformed companion or an unknown nested field in an earlier value.
+type suppliedRepresentation struct{ value *mediaRepresentation }
+
+func (track *suppliedRepresentation) UnmarshalJSON(data []byte) error {
+	if track.value != nil {
+		return errors.New("duplicate media representation")
+	}
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return errors.New("null media representation")
+	}
+	var representation mediaRepresentation
+	if err := decodeStrictJSON(data, &representation); err != nil {
+		return err
+	}
+	track.value = &representation
+	return nil
+}
+
+func decodeStrictJSON(data []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	return ensureJSONEOF(decoder)
+}
+
+type selectedTrack struct {
+	role           string
+	representation mediaRepresentation
+}
+
+func (source mediaLease) selectedTracks() []selectedTrack {
+	tracks := make([]selectedTrack, 0, 2)
+	if source.Video != nil {
+		tracks = append(tracks, selectedTrack{role: "video", representation: *source.Video})
+	}
+	if source.Audio != nil {
+		tracks = append(tracks, selectedTrack{role: "audio", representation: *source.Audio})
+	}
+	return tracks
 }
 
 type mediaRepresentation struct {
@@ -242,7 +301,16 @@ func (source mediaLease) validate() error {
 	if source.SourceKey == "" || source.SourceKey != strings.TrimSpace(source.SourceKey) || len(source.SourceKey) > 4096 || strings.IndexByte(source.SourceKey, 0) >= 0 {
 		return errors.New("invalid source key")
 	}
-	if !source.Video.valid(true) || !source.Audio.valid(false) || source.Video.URL == source.Audio.URL {
+	tracks := source.selectedTracks()
+	if len(tracks) == 0 {
+		return errors.New("invalid indexed media lease")
+	}
+	for _, track := range tracks {
+		if !track.representation.valid(track.role == "video") {
+			return errors.New("invalid indexed media lease")
+		}
+	}
+	if source.Video != nil && source.Audio != nil && source.Video.URL == source.Audio.URL {
 		return errors.New("invalid indexed media lease")
 	}
 	return nil

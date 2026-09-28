@@ -105,3 +105,37 @@ func TestFractionLessHandlesOverflow(t *testing.T) {
 		t.Fatal("large fraction comparison failed")
 	}
 }
+
+func TestOverlappingAudioPreservesBoundariesAndPartialCoverage(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		refs []mediaReference
+		want []mediaReference
+	}{
+		{name: "exact boundaries", refs: []mediaReference{
+			{Start: 0, Duration: 48000}, {Start: 48000, Duration: 24000},
+			{Start: 72000, Duration: 24000}, {Start: 96000, Duration: 48000},
+		}, want: []mediaReference{{Start: 48000, Duration: 24000}, {Start: 72000, Duration: 24000}}},
+		{name: "audio starts late", refs: []mediaReference{{Start: 72000, Duration: 48000}}, want: []mediaReference{{Start: 72000, Duration: 48000}}},
+		{name: "audio ends early", refs: []mediaReference{{Start: 24000, Duration: 48000}}, want: []mediaReference{{Start: 24000, Duration: 48000}}},
+		{name: "no overlap", refs: []mediaReference{{Start: 96000, Duration: 48000}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			selected, start, err := overlappingAudio(mediaIndex{Timescale: 48000, Refs: test.refs}, mediaReference{Start: 1000, Duration: 1000}, 1000)
+			if len(test.want) == 0 {
+				if asProblem(err).kind != "invalid_source" {
+					t.Fatalf("nonoverlap=%v", err)
+				}
+				return
+			}
+			if err != nil || len(selected) != len(test.want) || start != test.want[0].Start {
+				t.Fatalf("selected=%v start=%d err=%v", selected, start, err)
+			}
+			for i := range selected {
+				if selected[i] != test.want[i] {
+					t.Fatalf("selected=%v want=%v", selected, test.want)
+				}
+			}
+		})
+	}
+}

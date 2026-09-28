@@ -51,61 +51,62 @@ func (m *sourceManager) Produce(parent context.Context, request produceRequest) 
 }
 
 func (m *sourceManager) produceOnce(ctx context.Context, bundle *sourceBundle, request produceRequest, directory string) (produceResult, error) {
-	if request.Segment >= len(bundle.videoIdx.Refs) {
+	primary := bundle.primaryIndex()
+	if request.Segment < 0 || request.Segment >= len(primary.Refs) {
 		return produceResult{}, problem("invalid_input", "segment is out of range")
 	}
-	videoRef := bundle.videoIdx.Refs[request.Segment]
-	audioRefs, audioStart, err := overlappingAudio(bundle.audioIdx, videoRef, bundle.videoIdx.Timescale)
-	if err != nil {
-		return produceResult{}, err
+	primaryRef := primary.Refs[request.Segment]
+	paired := bundle.source.Video != nil && bundle.source.Audio != nil
+	var audioRefs []mediaReference
+	var trim float64
+	if paired {
+		var audioStart uint64
+		var err error
+		audioRefs, audioStart, err = overlappingAudio(bundle.audioIdx, primaryRef, primary.Timescale)
+		if err != nil {
+			return produceResult{}, err
+		}
+		trim = float64(primaryRef.Start)/float64(primary.Timescale) - float64(audioStart)/float64(bundle.audioIdx.Timescale)
+		if trim < 0 && trim > -1e-9 {
+			trim = 0
+		}
 	}
-	videoFile, err := os.CreateTemp(directory, ".indexed-media-video-*.mp4")
-	if err != nil {
-		return produceResult{}, problem("storage", "temporary video could not be created")
+	args := []string{"-y", "-hide_banner", "-loglevel", "error"}
+	var maps []string
+	for input, track := range bundle.source.selectedTracks() {
+		index, refs, extension, stream := bundle.videoIdx, []mediaReference{primaryRef}, ".mp4", "v"
+		if track.role == "audio" {
+			index, extension, stream = bundle.audioIdx, ".m4a", "a"
+			if paired {
+				refs = audioRefs
+				args = append(args, "-ss", formatSeconds(trim))
+			}
+		}
+		file, err := os.CreateTemp(directory, ".indexed-media-"+track.role+"-*"+extension)
+		if err != nil {
+			return produceResult{}, problem("storage", "temporary "+track.role+" could not be created")
+		}
+		defer os.Remove(file.Name())
+		writeErr := m.writeInput(ctx, file, track.representation, index, refs, request.MaxBytes)
+		closeErr := file.Close()
+		if writeErr != nil {
+			return produceResult{}, writeErr
+		}
+		if closeErr != nil {
+			return produceResult{}, problem("storage", "temporary "+track.role+" could not be closed")
+		}
+		args = append(args, "-i", file.Name())
+		maps = append(maps, "-map", fmt.Sprintf("%d:%s:0", input, stream))
 	}
-	videoPath := videoFile.Name()
-	defer os.Remove(videoPath)
-	audioFile, err := os.CreateTemp(directory, ".indexed-media-audio-*.m4a")
-	if err != nil {
-		_ = videoFile.Close()
-		return produceResult{}, problem("storage", "temporary audio could not be created")
-	}
-	audioPath := audioFile.Name()
-	defer os.Remove(audioPath)
-
-	if err := m.writeInput(ctx, videoFile, bundle.source.Video, bundle.videoIdx, []mediaReference{videoRef}, request.MaxBytes); err != nil {
-		_ = videoFile.Close()
-		_ = audioFile.Close()
-		return produceResult{}, err
-	}
-	if err := videoFile.Close(); err != nil {
-		_ = audioFile.Close()
-		return produceResult{}, problem("storage", "temporary video could not be closed")
-	}
-	if err := m.writeInput(ctx, audioFile, bundle.source.Audio, bundle.audioIdx, audioRefs, request.MaxBytes); err != nil {
-		_ = audioFile.Close()
-		return produceResult{}, err
-	}
-	if err := audioFile.Close(); err != nil {
-		return produceResult{}, problem("storage", "temporary audio could not be closed")
-	}
-
 	member := strconv.Itoa(request.Segment) + ".ts"
 	outputPath := filepath.Join(directory, member)
-	_ = os.Remove(outputPath)
-	trim := float64(videoRef.Start)/float64(bundle.videoIdx.Timescale) - float64(audioStart)/float64(bundle.audioIdx.Timescale)
-	if trim < 0 && trim > -1e-9 {
-		trim = 0
+	args = append(args, maps...)
+	args = append(args, "-copyts", "-c", "copy")
+	if paired {
+		args = append(args, "-shortest")
 	}
-	args := []string{
-		"-y", "-hide_banner", "-loglevel", "error",
-		"-i", videoPath,
-		"-ss", formatSeconds(trim), "-i", audioPath,
-		"-map", "0:v:0", "-map", "1:a:0",
-		"-copyts", "-c", "copy", "-shortest",
-		"-mpegts_copyts", "1", "-mpegts_flags", "+initial_discontinuity",
-		"-muxdelay", "0", "-f", "mpegts", outputPath,
-	}
+	args = append(args, "-mpegts_copyts", "1", "-mpegts_flags", "+initial_discontinuity",
+		"-muxdelay", "0", "-f", "mpegts", outputPath)
 	config := ffmpegclient.Config{
 		Address: m.config.FFmpegAddress, AuthSecret: m.config.FFmpegSecret,
 		DialTimeout: time.Duration(m.config.FFmpegDialTimeoutMs) * time.Millisecond,
@@ -262,11 +263,8 @@ func (m *sourceManager) copySourceRange(ctx context.Context, output *os.File, fo
 }
 
 func validRangeResponse(response *http.Response, start, end uint64) bool {
-	if response == nil || response.StatusCode != http.StatusPartialContent {
-		return false
-	}
-	prefix := fmt.Sprintf("bytes %d-%d/", start, end)
-	return strings.HasPrefix(response.Header.Get("Content-Range"), prefix)
+	first, last, _, ok := responseRange(response)
+	return ok && first == start && last == end
 }
 
 func isRetryable(err error) bool {

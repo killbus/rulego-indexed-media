@@ -58,6 +58,14 @@ func main() {
 	mux.HandleFunc("/run", server.resolve)
 	mux.HandleFunc("/video.mp4", server.media("video.mp4"))
 	mux.HandleFunc("/audio.m4a", server.media("audio.m4a"))
+	// Test-only leases have isolated URLs/statistics and use nonzero timelines.
+	for _, selection := range []string{"paired", "video", "audio"} {
+		mux.HandleFunc("/tracks/"+selection+"/video.mp4", server.media("offset-video.mp4"))
+		mux.HandleFunc("/tracks/"+selection+"/audio.m4a", server.media("offset-audio.m4a"))
+	}
+	mux.HandleFunc("/tracks/short-audio/audio.m4a", server.media("offset-short-audio.m4a"))
+	mux.HandleFunc("/tracks/short-audio/video.mp4", server.media("offset-video.mp4"))
+	mux.Handle("/playlists/", http.StripPrefix("/playlists/", http.FileServer(http.Dir(filepath.Join(*directory, "playlists")))))
 	mux.HandleFunc("/stats", server.stats)
 	log.Fatal(http.ListenAndServe(*listen, mux))
 }
@@ -219,7 +227,8 @@ func (s *fixtureServer) media(name string) http.HandlerFunc {
 			return
 		}
 
-		if start == 0 && end == (64<<10)-1 {
+		injectFaults := r.URL.Path == "/"+name
+		if injectFaults && r.Header.Get("Range") == "bytes=0-65535" {
 			status := http.StatusTooManyRequests
 			if name == "audio.m4a" {
 				status = http.StatusServiceUnavailable
@@ -231,7 +240,7 @@ func (s *fixtureServer) media(name string) http.HandlerFunc {
 				return
 			}
 		}
-		if start > info.Size()/2 && s.firstFault(name+":distant") {
+		if injectFaults && start > info.Size()/2 && s.firstFault(name+":distant") {
 			if name == "audio.m4a" {
 				s.record(requestRecord{Path: r.URL.Path, Range: r.Header.Get("Range"), Status: 0})
 				panic(http.ErrAbortHandler)
@@ -298,8 +307,13 @@ func parseRange(value string, size int64) (int64, int64, error) {
 	}
 	start, startErr := strconv.ParseInt(matches[1], 10, 64)
 	end, endErr := strconv.ParseInt(matches[2], 10, 64)
-	if startErr != nil || endErr != nil || start < 0 || end < start || end >= size {
+	if startErr != nil || endErr != nil || start < 0 || end < start || start >= size {
 		return 0, 0, errors.New("invalid range")
+	}
+	// A satisfiable HTTP range clips at EOF. The plugin permits this only for
+	// its initial probe; subsequent index and production reads remain exact.
+	if end >= size {
+		end = size - 1
 	}
 	return start, end, nil
 }

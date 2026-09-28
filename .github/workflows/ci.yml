@@ -30,7 +30,9 @@ jobs:
             (.sdk | test("^ghcr\\.io/killbus/rulego-plugin-sdk@sha256:[0-9a-f]{64}$")) and
             (.runtime | test("^ghcr\\.io/killbus/rulego-server@sha256:[0-9a-f]{64}$"))
           ' plugin-abi-release.json
-          jq -e . examples/youtube-hls/chain.json testdata/*.json >/dev/null
+          jq -e . examples/youtube-hls/chain.json testdata/*.json tests/e2e/*.json >/dev/null
+          bash -n tests/e2e-hls-seek.sh
+          python3 -m py_compile tests/e2e/track_modes.py
       - run: go mod download
       - name: Verify source module identity
         run: test "$(go list -m)" = "github.com/killbus/rulego-indexed-media"
@@ -39,6 +41,8 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go test -race ./...
+      - name: Check media acceptance assertions
+        run: python3 -m unittest discover -s tests/e2e -p 'test_*.py'
 
   build:
     strategy:
@@ -172,7 +176,7 @@ jobs:
           if-no-files-found: error
 
   e2e-hls-seek:
-    name: Hermetic HLS seek
+    name: Hermetic selected-track TS and HLS seek
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -228,8 +232,18 @@ jobs:
             echo "FFMPEG_PLUGIN=$GITHUB_WORKSPACE/tmp/peers/$ffmpeg_artifact"
             echo "ORIGIN_PLUGIN=$GITHUB_WORKSPACE/tmp/peers/$origin_artifact"
           } >> "$GITHUB_ENV"
-      - name: Run real indexed HLS path
+      - name: Run real indexed track modes and paired lifecycle
         run: tests/e2e-hls-seek.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: indexed-media-track-evidence
+          path: |
+            tmp/e2e-hls.*/artifact-identity.txt
+            tmp/e2e-hls.*/ffprobe-version.json
+            tmp/e2e-hls.*/track-evidence/
+            tmp/e2e-hls.*/playlists/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

@@ -17,11 +17,11 @@ import (
 func testLease(videoURL, audioURL string) mediaLease {
 	return mediaLease{
 		SourceKey: "provider:asset",
-		Video: mediaRepresentation{
+		Video: &mediaRepresentation{
 			URL: videoURL, Headers: map[string]string{"Authorization": "video-lease"},
 			Container: "mp4", Codec: "avc1.64002a",
 		},
-		Audio: mediaRepresentation{
+		Audio: &mediaRepresentation{
 			URL: audioURL, Headers: map[string]string{"Authorization": "audio-lease"},
 			Container: "m4a", Codec: "mp4a.40.2",
 		},
@@ -31,6 +31,12 @@ func testLease(videoURL, audioURL string) mediaLease {
 func testBundle(source mediaLease, revision string) *sourceBundle {
 	videoIndex := mediaIndex{Timescale: 1000, Raw: []byte("video-index"), InitSize: 8, Refs: []mediaReference{{Offset: 8, Size: 3, Duration: 2000, Start: 0}}}
 	audioIndex := mediaIndex{Timescale: 1000, Raw: []byte("audio-index"), InitSize: 8, Refs: []mediaReference{{Offset: 8, Size: 3, Duration: 2000, Start: 0}}}
+	if source.Video == nil {
+		videoIndex = mediaIndex{}
+	}
+	if source.Audio == nil {
+		audioIndex = mediaIndex{}
+	}
 	return &sourceBundle{source: source, revision: revision, videoIdx: videoIndex, audioIdx: audioIndex}
 }
 
@@ -94,6 +100,8 @@ func TestIndexCacheIsBoundToTheCompleteLease(t *testing.T) {
 	first := testLease("https://media.invalid/video?lease=one", "https://media.invalid/audio?lease=one")
 	second := testLease("https://media.invalid/video?lease=two", "https://media.invalid/audio?lease=two")
 	third := second
+	video := *second.Video
+	third.Video = &video
 	third.Video.Headers = map[string]string{"Authorization": "refreshed-video-lease"}
 	manager := bareManager()
 	defer manager.Close()
@@ -147,6 +155,8 @@ func TestRevisionExcludesLeaseURLsAndHeaders(t *testing.T) {
 		t.Fatal("stable source identity did not affect revision")
 	}
 	second = first
+	video := *first.Video
+	second.Video = &video
 	second.Video.Codec = "avc1.4d401f"
 	if sourceRevision(first, index, index) == sourceRevision(second, index, index) {
 		t.Fatal("immutable media facts did not affect revision")
@@ -161,8 +171,8 @@ func TestRevisionExcludesLeaseURLsAndHeaders(t *testing.T) {
 func TestSourceRevisionFixedDigest(t *testing.T) {
 	source := mediaLease{
 		SourceKey: "fixture:paired-index-v1",
-		Video:     mediaRepresentation{Container: "MP4", Codec: "AVC1.640028"},
-		Audio:     mediaRepresentation{Container: "M4A", Codec: "MP4A.40.2"},
+		Video:     &mediaRepresentation{Container: "MP4", Codec: "AVC1.640028"},
+		Audio:     &mediaRepresentation{Container: "M4A", Codec: "MP4A.40.2"},
 	}
 	video := mediaIndex{
 		InitSize: 0x0102030405060708,
@@ -316,12 +326,8 @@ func TestStrictGenericRequestDecoding(t *testing.T) {
 					t.Fatal(err)
 				}
 				gotOperation, _, err := decodeRequest(string(body))
-				if missing == "" {
-					if err != nil || gotOperation != operation {
-						t.Fatalf("paired request operation=%q err=%v", gotOperation, err)
-					}
-				} else if err == nil {
-					t.Fatalf("missing %s succeeded", missing)
+				if err != nil || gotOperation != operation {
+					t.Fatalf("selected request operation=%q err=%v", gotOperation, err)
 				}
 			})
 		}

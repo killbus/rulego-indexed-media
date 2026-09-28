@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -22,7 +26,11 @@ func TestParseRange(t *testing.T) {
 		{name: "suffix", value: "bytes=-2", size: 8, wantFailure: true},
 		{name: "multiple", value: "bytes=0-1,4-5", size: 8, wantFailure: true},
 		{name: "signed number", value: "bytes=+2-7", size: 8, wantFailure: true},
-		{name: "past end", value: "bytes=2-8", size: 8, wantFailure: true},
+		{name: "clips at EOF", value: "bytes=2-8", size: 8, wantStart: 2, wantEnd: 7},
+		{name: "short initial probe", value: "bytes=0-65535", size: 8, wantStart: 0, wantEnd: 7},
+		{name: "starts at EOF", value: "bytes=8-9", size: 8, wantFailure: true},
+		{name: "empty file", value: "bytes=0-65535", size: 0, wantFailure: true},
+		{name: "overflow", value: "bytes=0-9223372036854775808", size: 8, wantFailure: true},
 		{name: "reversed", value: "bytes=7-2", size: 8, wantFailure: true},
 	}
 	for _, test := range tests {
@@ -36,6 +44,43 @@ func TestParseRange(t *testing.T) {
 			}
 			if err != nil || start != test.wantStart || end != test.wantEnd {
 				t.Fatalf("parseRange(%q, %d) = %d, %d, %v", test.value, test.size, start, end, err)
+			}
+		})
+	}
+}
+
+func TestMediaShortProbeAndExactRanges(t *testing.T) {
+	directory := repositoryTempDir(t)
+	data := bytes.Repeat([]byte{0x42}, 1024)
+	if err := os.WriteFile(filepath.Join(directory, "short.m4a"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := &fixtureServer{directory: directory, faults: make(map[string]bool)}
+	for _, test := range []struct {
+		value      string
+		wantRange  string
+		wantStatus int
+		wantBody   []byte
+	}{
+		{"bytes=0-65535", "bytes 0-1023/1024", http.StatusPartialContent, data},
+		{"bytes=0-15", "bytes 0-15/1024", http.StatusPartialContent, data[:16]},
+		{"bytes=1024-2047", "bytes */1024", http.StatusRequestedRangeNotSatisfiable, nil},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/tracks/short-audio/audio.m4a", nil)
+			request.Header.Set("X-Fixture-Lease", leaseHeader)
+			request.Header.Set("Range", test.value)
+			response := httptest.NewRecorder()
+			server.media("short.m4a")(response, request)
+			if response.Code != test.wantStatus || response.Header().Get("Content-Range") != test.wantRange || !bytes.Equal(response.Body.Bytes(), test.wantBody) {
+				t.Fatalf("range response = %d %v (%d bytes)", response.Code, response.Header(), response.Body.Len())
+			}
+			if response.Code == http.StatusPartialContent && response.Header().Get("Content-Length") != strconv.Itoa(len(test.wantBody)) {
+				t.Fatal("response length does not match EOF-clipped body")
+			}
+			record := server.requests[len(server.requests)-1]
+			if record.Path != request.URL.Path || record.Range != test.value || record.Status != test.wantStatus || record.Bytes != len(test.wantBody) {
+				t.Fatalf("request evidence = %+v", record)
 			}
 		})
 	}
