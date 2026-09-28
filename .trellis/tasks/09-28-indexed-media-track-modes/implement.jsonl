@@ -1,4 +1,0 @@
-{"file":".trellis/spec/backend/index.md","reason":"Backend spec routing and English documentation requirements."}
-{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Preserve shared ownership, lease identity, typed errors and CI contracts; reviewed PRD supersedes only paired-required clauses."}
-{"file":".trellis/tasks/09-28-indexed-media-track-modes/research/track-contracts.md","reason":"Anchored validation, timeline, revision, cache and safety research; use design.md for resolved technical choices."}
-{"file":".trellis/tasks/09-28-indexed-media-track-modes/research/output-scope.md","reason":"User selected TS output and one chosen track set per request; separate engineering audio streaming ownership and real-media evidence."}
