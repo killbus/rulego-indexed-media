@@ -12,11 +12,11 @@
   "assignee": "killbus",
   "createdAt": "2026-09-28",
   "completedAt": null,
-  "branch": null,
+  "branch": "feat/indexed-media-track-modes",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
-  "pr_url": null,
+  "commit": "8b60a40bbfe84f4f29bc2b40f0a99d78871df1bd",
+  "pr_url": "https://github.com/killbus/rulego-indexed-vod/pull/2",
   "subtasks": [],
   "children": [],
   "parent": null,
@@ -44,6 +44,6 @@
     "tests/e2e/README.md",
     ".github/workflows/ci.yml"
   ],
-  "notes": "2026-09-28: User confirmed implementation; task.py start succeeded. Core changes, regression assertions, real-media CI harness, docs/spec, independent full-scope source review and static checks are complete. Proposed branch/commit awaits workflow Phase 3.4 confirmation; no commit/push performed. A1-A5 acceptance remains pending compiled/runtime owning CI. One requested TS per selected track set; engineering indexed-audio remains independent.",
+  "notes": "2026-09-28: Implementation committed and pushed after user confirmation; PR #2 targets main. CI 36402240660 passed vet, unit/race, Python controls, both-architecture build/ABI smoke, and release metadata. Real-media acceptance failed on a missing FFprobe duration in the first AAC packet; debug upload also failed traversing a private runtime directory. Focused harness fixes are in progress; playback acceptance and task completion remain pending. Continue CI on the feature branch and use a squash merge to keep main history compact. One requested TS per selected track set; engineering indexed-audio remains independent.",
   "meta": {}
 }

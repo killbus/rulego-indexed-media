@@ -41,6 +41,21 @@ paired audio adjacency permits one AAC frame of trimming overlap; single-track
 adjacency permits two TS rounding ticks. There are no arbitrary second-based
 timing allowances.
 
+The pinned FFprobe in CI run `36402240660` omitted `duration` only for the first
+packet of `original-audio.m4a`. Its next DTS was 1024 samples later; all 750
+remaining packets declared 1024 samples, with the same DTS cadence and PTS=DTS.
+The harness permits that first duration to be derived from the next DTS only
+for 48-kHz AAC-LC with a 1/48000 time base, when every remaining packet declares
+one 1024-sample frame and every DTS step matches exactly. It also requires PTS
+to equal DTS throughout. This works with zero or shifted source timestamps.
+Missing video, interior, final, multiple, or uncorroborated durations fail;
+existing durations are never replaced, and timing tolerances remain unchanged.
+The raw probe JSON retains the omission. Each successful probe check writes a
+separate `*-duration-derivations.json` recording the method, packet/stream index,
+DTS pair, duration ticks, sample clock, and corroborating packet count (empty
+lists when no inference was needed). These files are saved before decoding or
+later acceptance checks, so a subsequent failure retains the derivation evidence.
+
 The existing paired concurrency, retry, restart, stale-parent/TTL, static range,
 and broken-mapping checks remain in the shell harness. Python negative controls
 run in CI with `python3 -m unittest discover -s tests/e2e -p 'test_*.py'`; fixture

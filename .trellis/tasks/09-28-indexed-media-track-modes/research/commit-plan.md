@@ -1,5 +1,33 @@
 # Proposed implementation commit
 
+## Execution and CI follow-up
+
+The initial proposal below was confirmed and executed as `8b60a40` on
+`feat/indexed-media-track-modes`, then pushed at the user's request. PR #2 now
+targets `main`. The user requested continued progression; fixes remain on this
+feature branch, with a squash merge planned after checks and review pass.
+
+First-run CI repairs form one additional commit:
+`fix: validate AAC probe evidence and collect readable CI logs`.
+
+- .github/workflows/ci.yml
+- tests/e2e-hls-seek.sh
+- tests/e2e/track_modes.py
+- tests/e2e/test_track_modes.py
+- tests/e2e/README.md
+- .trellis/spec/backend/quality-guidelines.md
+- .trellis/tasks/09-28-indexed-media-track-modes/task.json
+- .trellis/tasks/09-28-indexed-media-track-modes/prd.md
+- .trellis/tasks/09-28-indexed-media-track-modes/implement.md
+- .trellis/tasks/09-28-indexed-media-track-modes/research/acceptance-evidence.md
+- .trellis/tasks/09-28-indexed-media-track-modes/research/commit-plan.md
+
+This repair preserves production code and timing tolerances. Recheck the staged
+list before committing; do not include downloaded CI artifacts. Push the repair
+to the existing PR and rerun owning CI. Runtime acceptance remains incomplete.
+
+## Initial proposal (historical)
+
 Prepared for the workflow Phase 3.4 review. This file is a proposal, not approval
 or evidence of a commit. Runtime acceptance remains pending owning CI, as agreed
 in implement.md; the task must stay in_progress until that evidence is recorded.

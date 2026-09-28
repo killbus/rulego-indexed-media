@@ -97,6 +97,9 @@ enables audio listening and silent-video use without fetching an unwanted track.
 
 The user confirmed the final PRD/design/execution review on 2026-09-28, and
 task.py start activated this task. Implementation, documentation, independent
-source review, and local static checks are complete. The reviewed commit plan is
-in research/commit-plan.md. Acceptance remains pending the committed candidate's
-owning-CI checks; this task is not completed or archived.
+source review, and local static checks are complete. Commit `8b60a40` was pushed
+and PR #2 opened against main. The first owning-CI run passed compiled tests and
+both-architecture build/smoke; real-media acceptance stopped on an AAC probe
+duration assumption, and debug upload hit a private-directory permission error.
+Harness fixes and a new CI run remain required. See research/acceptance-evidence.md;
+this task is not completed or archived.

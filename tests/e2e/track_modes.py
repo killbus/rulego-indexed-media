@@ -114,18 +114,43 @@ def packet_groups(probe, roles):
         require(stream["codec_name"] == ("h264" if role == "video" else "aac"), "unexpected codec")
         scale = Fraction(stream["time_base"])
         quantum = Fraction(1, 30) if role == "video" else Fraction(1024, int(stream["sample_rate"]))
+        raw_packets = [p for p in probe["packets"] if p["stream_index"] == stream["index"]]
+        require(raw_packets, f"no {role} packets")
+        require(all("pts" in p and "dts" in p for p in raw_packets), f"missing {role} packet timestamp")
+        missing = [i for i, p in enumerate(raw_packets) if "duration" not in p]
+        derivations = []
+        if missing:
+            # The pinned probe omits only the first source AAC duration. Infer
+            # it only when the complete stream confirms the fixture's cadence;
+            # a missing packet must never become a longer inferred frame.
+            require(role == "audio" and stream.get("profile") == "LC" and
+                    int(stream["sample_rate"]) == 48000 and scale == Fraction(1, 48000) and
+                    missing == [0] and len(raw_packets) > 1,
+                    f"unsupported missing {role} packet duration")
+            duration_ticks = int(raw_packets[1]["dts"]) - int(raw_packets[0]["dts"])
+            require(duration_ticks * scale == quantum and
+                    all(int(p["pts"]) == int(p["dts"]) for p in raw_packets) and
+                    all(int(p["duration"]) * scale == quantum for p in raw_packets[1:]) and
+                    all((int(b["dts"]) - int(a["dts"])) * scale == quantum
+                        for a, b in zip(raw_packets, raw_packets[1:])),
+                    "ambiguous AAC packet duration: expected an exact 1024-sample cadence")
+            derivations.append(dict(packet_index=0, stream_index=stream["index"],
+                                    method="next_dts_with_aac_lc_frame_consistency",
+                                    dts=int(raw_packets[0]["dts"]), next_dts=int(raw_packets[1]["dts"]),
+                                    duration_ticks=duration_ticks, time_base=stream["time_base"],
+                                    sample_rate=48000, frame_samples=1024,
+                                    corroborating_packets=len(raw_packets) - 1))
         packets = []
-        for packet in probe["packets"]:
-            if packet["stream_index"] == stream["index"]:
-                packets.append(dict(pts=int(packet["pts"]) * scale,
-                                    dts=int(packet["dts"]) * scale,
-                                    duration=int(packet["duration"]) * scale,
-                                    pos=int(packet.get("pos", -1))))
-        require(packets, f"no {role} packets")
+        for packet in raw_packets:
+            duration = int(packet["duration"]) if "duration" in packet else duration_ticks
+            packets.append(dict(pts=int(packet["pts"]) * scale,
+                                dts=int(packet["dts"]) * scale,
+                                duration=duration * scale,
+                                pos=int(packet.get("pos", -1))))
         require(all(p["duration"] > 0 for p in packets), "nonpositive packet duration")
         require(all(a["dts"] < b["dts"] for a, b in zip(packets, packets[1:])),
                 f"nonmonotonic {role} decode timestamps")
-        groups[role] = dict(packets=packets, quantum=quantum)
+        groups[role] = dict(packets=packets, quantum=quantum, duration_derivations=derivations)
     return groups
 
 
@@ -189,11 +214,14 @@ class Acceptance:
         require(result.returncode == 0, f"{program} failed ({label}): {result.stderr}")
         return result.stdout
 
-    def probe(self, source, label):
+    def probe(self, source, label, roles):
         output = self.remote("ffprobe", ["-v", "error", "-show_streams", "-show_packets",
                                          "-show_format", "-of", "json", source], label)
         value = json.loads(output)
         save(self.evidence / (label + ".json"), value)
+        groups = packet_groups(value, roles)
+        save(self.evidence / (label + "-duration-derivations.json"),
+             {role: group["duration_derivations"] for role, group in groups.items()})
         return value
 
     def decode(self, source, roles, label, seek=None, stop=None):
@@ -231,11 +259,11 @@ class Acceptance:
     def source_evidence(self):
         sources = {}
         for name, role in (("video.mp4", "video"), ("audio.m4a", "audio"), ("short-audio.m4a", "audio")):
-            original = packet_groups(self.probe("/work/" + name, "original-" + name), [role])[role]
+            original = packet_groups(self.probe("/work/" + name, "original-" + name, [role]), [role])[role]
             filename = "offset-" + name
             data = (self.directory / filename).read_bytes()
             index = sidx(data)
-            probe = self.probe("/work/" + filename, "source-" + name)
+            probe = self.probe("/work/" + filename, "source-" + name, [role])
             group = packet_groups(probe, [role])[role]
             require(len(original["packets"]) == len(group["packets"]), "timestamp shift changed packets")
             for before, after in zip(original["packets"], group["packets"]):
@@ -347,7 +375,7 @@ class Acceptance:
             require(staged[0]["regular"] and produced["bytes"] == staged[0]["bytes"] > 0, "wrong output byte count")
             if number in selected:
                 remote_path = "/work/" + (staging / member).as_posix()
-                probe = self.probe(remote_path, label)
+                probe = self.probe(remote_path, label, roles)
                 require("mpegts" in probe["format"]["format_name"], "output is not MPEG-TS")
                 decoded = self.decode(remote_path, roles, label + "-decode")
                 summaries[number] = self.check_member(probe, decoded, roles, sources, ref, scale, label)

@@ -7,8 +7,9 @@ checks from compiled/runtime acceptance.
 ## Source and artifact identity
 
 - Base HEAD: d85b5ee6090384ef9f3a8a056a5766bed6ed2e6b on main.
-- Candidate: uncommitted working-tree changes for this task; no candidate commit
-  or plugin artifact has been produced yet.
+- Candidate: `8b60a40bbfe84f4f29bc2b40f0a99d78871df1bd` on
+  `feat/indexed-media-track-modes`, pushed after user confirmation.
+- PR: https://github.com/killbus/rulego-indexed-vod/pull/2 (base `main`).
 - The three pre-existing bookkeeping commits remain intact. They are not new
   implementation commits for this task.
 - Runtime, SDK, and peer-plugin selectors remain those in plugin-abi-release.json
@@ -18,11 +19,11 @@ checks from compiled/runtime acceptance.
 
 | Criterion | Source / planned evidence | Execution status |
 | --- | --- | --- |
-| A1 | node.go strict decoder; node_test.go public selections and track_modes_test.go malformed-request cases | Implemented; compilation and CI pending |
+| A1 | node.go strict decoder; node_test.go public selections and track_modes_test.go malformed-request cases | Unit/race tests passed in CI 36402240660 |
 | A2 | source.go/producer.go primary selection; producer_modes_test.go ranges/maps; probe_test.go EOF cases; tests/e2e/track_modes.py stream/timing checks | Implemented; actual-media CI pending |
-| A3 | source_test.go paired literal; track_modes_test.go single literals; source_modes_test.go lease isolation; producer_modes_test.go renewal/gate | Implemented; CI pending |
-| A4 | Existing safety/ownership tests; producer_modes_test.go retries, cancellation, limits, paths, stale invalidation and cleanup | Implemented; CI pending |
-| A5 | README/spec contracts, full-scope review, all CI jobs | Docs and source review complete; CI pending |
+| A3 | source_test.go paired literal; track_modes_test.go single literals; source_modes_test.go lease isolation; producer_modes_test.go renewal/gate | Unit/race tests passed in CI 36402240660 |
+| A4 | Existing safety/ownership tests; producer_modes_test.go retries, cancellation, limits, paths, stale invalidation and cleanup | Unit/race and both-architecture smoke passed; complete E2E pending |
+| A5 | README/spec contracts, full-scope review, all CI jobs | Docs/source review and build/test jobs passed; E2E failed |
 
 ## Structural validation
 
@@ -63,15 +64,61 @@ No remaining confirmed in-scope source defect was reported. Pinned client/servic
 compatibility, translated AAC priming, paired trim boundaries, and actual seek
 results still require CI. Source review is not completed runtime acceptance.
 
+## First owning-CI execution
+
+Run: https://github.com/killbus/rulego-indexed-vod/actions/runs/36402240660
+
+- PR head: `8b60a40bbfe84f4f29bc2b40f0a99d78871df1bd`. The PR merge checkout
+  recorded by the runtime harness is `a2ef2b5a3aefc14cc5ef9c229a963adff3bfbc20`.
+- PASS: formatting, `go vet ./...`, `go test ./...`, `go test -race ./...`,
+  Python acceptance controls, amd64/arm64 plugin builds and matching-runtime
+  owner/ref smoke, and release metadata.
+- PASS: pinned service JSON FFprobe capability check and the paired seek
+  invocation reached before the new selected-track harness. This does not
+  establish complete all-mode playback, timing, or lifecycle acceptance.
+- FAIL: `packet_groups` indexed a missing `duration` on the original AAC
+  fixture's first packet. Its PTS/DTS are 0; the next packet is at 1024 ticks
+  with a 1/48000 time base. The other 750 packets report duration 1024. The raw
+  `original-audio.m4a.json` is retained in `indexed-media-track-evidence`.
+- FAIL: the separate debug artifact upload recursively traversed
+  `data/resource-origin/catalog` and received EACCES. The explicitly scoped
+  `indexed-media-track-evidence` artifact uploaded successfully.
+- Tested amd64 plugin SHA-256:
+  `3c2e8d711392eabcf08349c570d11411f494fd9aaa6aaa9b48aebd2cc6fa21dc`.
+  Runtime/FFmpeg image digests and verified peer checksums are recorded in the
+  uploaded `artifact-identity.txt`; ABI verification passed in the build job.
+
+These failures require focused harness fixes and a new owning-CI run. No
+production core defect has been established by this failed run. The task remains
+in_progress, with A2/A4/A5 runtime acceptance incomplete.
+
+## CI repair validation
+
+- Missing first AAC durations are now derived only from an exact, fully
+  corroborated 1024-sample AAC-LC cadence. Raw probes stay unchanged; separate
+  derivation records retain the evidence used. Timing tolerances are unchanged.
+- PASS: 25 pure Python controls, including the observed omission and rejected
+  ambiguous cases. Replaying the downloaded original audio probe derives one
+  duration across 751 packets; the original/shifted video probes need no
+  derivation and retain their exact four-second translation.
+- Failure diagnostics are saved before cleanup. Debug uploads use a readable
+  direct-child snapshot instead of walking private runtime data.
+- PASS: Bash syntax, CI YAML parsing, simulated inaccessible-child collection,
+  original failure-status preservation (including failed log writes), and
+  scoped whitespace checks.
+- PASS: independent Trellis repair review found no additional defects. It
+  checked all changed harness/CI/spec/task files and replayed authentic probes
+  and the captured video framehash, plus debug-collector negative controls.
+- These local repair checks do not replace the next actual-media CI run.
+
 ## Runtime validation still required
 
 Per the approved execution plan, owning CI must run go vet, unit tests, race
 tests, amd64/arm64 plugin build and matching-host ABI/registration/owner-ref
 smoke, and tests/e2e-hls-seek.sh with the candidate and verified peers.
 
-No local Docker build or runtime suite is substituted for this evidence. No
-current candidate CI run, playback result, or completed acceptance is claimed.
-Record the tested commit, CI URL, plugin checksums/ABI, and actual media results
+No local Docker build or runtime suite is substituted for this evidence. Record
+the next tested commit, CI URL, plugin checksums/ABI, and actual media results
 here when available. Prior rename CI is not evidence for this implementation.
 
 The E2E job now retains artifact identity, FFprobe version, source and segment

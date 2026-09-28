@@ -3,8 +3,8 @@
 Status: in_progress. On 2026-09-28 the user confirmed the final implementation
 review after selecting TS output and per-request track selection. The task is
 active; implementation and source review are complete. Checkboxes record evidence,
-not assumed product-test results. Sections 1-3 now record implemented code and
-regression assertions; their compiled/runtime execution remains pending CI.
+not assumed product-test results. The first PR CI passed compiled tests and both
+architecture build/smoke; full media acceptance requires harness fixes and rerun.
 
 ## Before activation
 
@@ -98,8 +98,10 @@ and deployment remain outside this task.
 - [x] Record A1-A5 in research/acceptance-evidence.md with exact source revision,
   commands and CI/artifact identity. Distinguish unavailable, failed, and passed
   checks. Actual media evidence is required for capability completion.
-- [ ] Execute owning CI against the committed candidate and record compiled,
-  architecture, and actual-media results. All A1-A5 runtime acceptance is pending.
+- [ ] Complete owning CI against the committed candidate and record compiled,
+  architecture, and actual-media results. Run 36402240660 passed compiled and
+  architecture checks but failed real-media acceptance and debug upload; see
+  research/acceptance-evidence.md for the exact source/artifact and failures.
 - [ ] Complete spec review, commit/handoff and task completion per workflow.
 
 ## Risk and rollback checkpoints

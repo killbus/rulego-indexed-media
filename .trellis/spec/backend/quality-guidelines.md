@@ -147,6 +147,17 @@ refresh representation URLs or headers.
   reference N, uses the required `0:v:0` or `0:a:0` map, and skips cross-track
   trimming. All modes retain timestamp-preserving TS stream copy, bounded inputs
   and output, staging confinement, retries, deadlines, and temporary-input cleanup.
+- The CI fixture's FFprobe may omit the first AAC packet's `duration`. Only
+  infer that value for AAC-LC, 48000 Hz, time base 1/48000, exactly one omission
+  at packet zero, and a following packet. Require PTS=DTS, every following
+  duration to equal 1024 samples, and every DTS step to equal 1024 samples.
+  Derive from the next DTS; preserve the raw probe and record the derivation
+  separately in `*-duration-derivations.json`. Never enlarge timing tolerances.
+- On E2E failure, save diagnostics before container cleanup and retain the
+  original exit status even if log writing fails. Upload debug files through
+  the readable `tmp/e2e-hls-debug/` snapshot, containing only allowed regular
+  direct children of each run directory. Do not follow symlinks, recursively
+  traverse private runtime data, or change runtime permissions for uploads.
 - The initial `bytes=0-65535` probe uses identity encoding. Permit a clipped 206
   only with a fully parsed Content-Range proving start=0, positive total<65536,
   end=total-1, and exact body length. All subsequent ranges remain exact. A probe
@@ -182,6 +193,10 @@ refresh representation URLs or headers.
   fields, repeated track keys, or equal paired URLs -> `invalid_input` before
   network/FFmpeg work.
 - Valid omitted companion -> inspect/produce only the selected track.
+- Missing video/interior/final/multiple packet durations, unsupported sample
+  clock/profile, or inconsistent AAC cadence -> fail CI evidence validation.
+- Unreadable debug file -> log and skip that file; a private runtime directory
+  is never traversed. Debug collection must not turn the test failure into a pass.
 - HTTP 200, invalid Content-Range, encoded/oversized body, or short response without
   proven EOF on the initial probe -> terminal typed range failure.
 - 401/403/404/410 from a representation -> `source_stale`.
@@ -201,6 +216,9 @@ refresh representation URLs or headers.
   one requested TS member with no video requests.
 - Bad: treating an invalid supplied companion as absent, or generating all three
   combinations when the caller requested one.
+- Good: a first AAC duration omission is corroborated by the entire fixture's
+  sample clock and recorded without rewriting raw FFprobe output.
+- Bad: filling every absent packet duration with a codec constant or zero.
 - Bad: a new session/plugin owner is introduced only to retain resolver output,
   or a cache lookup by `sourceKey` returns old signed URLs for a new lease.
 
@@ -237,6 +255,11 @@ refresh representation URLs or headers.
   stream types, decoding, timing, and HLS seek. Include first/distant/final and
   adjacent members, nonzero starts, valid audio below 64 KiB, and isolated
   absent-track request counts. Preserve paired cache/restart/retention checks.
+- Exercise the observed first AAC duration omission and reject ambiguous
+  omissions, missing/reordered timestamps, cadence gaps, and wrong profiles or
+  clocks. Assert raw probe preservation and separately persisted derivations.
+- Check debug collection with inaccessible runtime children and symlinks, and
+  preserve the failed command's exit status when diagnostic writing fails.
 
 ### 7. Wrong vs Correct
 

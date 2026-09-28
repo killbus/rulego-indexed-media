@@ -244,11 +244,37 @@ jobs:
             tmp/e2e-hls.*/track-evidence/
             tmp/e2e-hls.*/playlists/
           if-no-files-found: warn
+      - name: Collect readable HLS debug files
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          suffixes = {
+              ".bin", ".conf", ".headers", ".json", ".log",
+              ".m3u8", ".m4a", ".mp4", ".ts", ".txt",
+          }
+          for run_dir in Path("tmp").glob("e2e-hls.*"):
+              if run_dir.is_symlink() or not run_dir.is_dir():
+                  continue
+              destination = Path("tmp/e2e-hls-debug") / run_dir.name
+              destination.mkdir(parents=True, exist_ok=True)
+              # Only inspect direct children. Runtime data may contain private
+              # directories; never recurse into them or follow symlinks.
+              for source in run_dir.iterdir():
+                  if source.suffix not in suffixes or source.is_symlink() or not source.is_file():
+                      continue
+                  try:
+                      shutil.copyfile(source, destination / source.name)
+                  except OSError as error:
+                      print(f"Skipping unreadable debug file {source}: {error}")
+          PY
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: e2e-hls-seek-debug
-          path: tmp/e2e-hls.*/
+          path: tmp/e2e-hls-debug/
           if-no-files-found: ignore
 
   release-metadata:

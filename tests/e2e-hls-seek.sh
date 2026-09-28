@@ -51,7 +51,7 @@ cleanup() {
 
 failed() {
 	status=$?
-	dump_logs
+	dump_logs 2>&1 | tee "$run_dir/failure.log" >&2 || true
 	cleanup
 	exit "$status"
 }
