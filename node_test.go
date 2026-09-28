@@ -1,31 +1,69 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	ffmpegclient "github.com/killbus/rulego-ffmpeg-over-ip/client"
 	"github.com/rulego/rulego"
 	"github.com/rulego/rulego/api/types"
+	ruleengine "github.com/rulego/rulego/engine"
 )
 
 func TestPluginContract(t *testing.T) {
 	components := Plugins.Components()
-	if len(components) != 1 || components[0].Type() != "indexedVod" {
+	if len(components) != 1 || components[0].Type() != "indexedMedia" {
 		t.Fatalf("components = %#v", components)
 	}
-	node, ok := components[0].(*indexedVodNode)
+	node, ok := components[0].(*indexedMediaNode)
 	if !ok {
 		t.Fatalf("component type = %T", components[0])
 	}
+	if def := node.Def(); def.Type != "indexedMedia" || def.Label != "Indexed Media" {
+		t.Fatalf("component definition = %#v", def)
+	}
 	want := []string{types.Success, types.Failure}
-	if got := *node.Def().RelationTypes; !reflect.DeepEqual(got, want) {
+	if got := node.Def().RelationTypes; got == nil || !reflect.DeepEqual(*got, want) {
 		t.Fatalf("relations = %#v, want %#v", got, want)
+	}
+	registry := &ruleengine.RuleComponentRegistry{}
+	for _, component := range components {
+		if err := registry.Register(component); err != nil {
+			t.Fatal(err)
+		}
+	}
+	config := rulego.NewConfig()
+	config.ComponentsRegistry = registry
+	for _, nodeType := range []string{"indexedMedia", "indexedVod"} {
+		t.Run(nodeType, func(t *testing.T) {
+			dsl := fmt.Sprintf(`{
+  "ruleChain":{"id":"registration-test","root":true},
+  "metadata":{"firstNodeIndex":0,"nodes":[
+    {"id":"owner","type":%q,"configuration":{
+      "root":%q,"ffmpegAddress":"127.0.0.1:1","ffmpegSecret":"test"}}
+  ]}
+}`, nodeType, t.TempDir())
+			pool := rulego.NewRuleGo()
+			engine, err := pool.New("registration-test", []byte(dsl), rulego.WithConfig(config))
+			if err == nil {
+				defer engine.Stop(nil)
+			}
+			if nodeType == "indexedMedia" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "component not found") || !strings.Contains(err.Error(), nodeType) {
+				t.Fatalf("old type load error = %v, want unregistered component", err)
+			}
+		})
 	}
 }
 
@@ -191,6 +229,7 @@ func TestExampleScriptsCompile(t *testing.T) {
 	if parentAcquireRequest == nil || segmentSourceSwitch == nil || cachedProduceRequest == nil {
 		t.Fatal("source lease cache nodes are missing")
 	}
+	segmentResolveRequest := exampleScriptNodes(t, "segment-resolve-request")["segment-resolve-request"]
 	revision := strings.Repeat("a", 64)
 	dsl, err = json.Marshal(map[string]any{
 		"ruleChain": map[string]any{"id": "source-lease-cache-test", "root": true},
@@ -200,11 +239,15 @@ func TestExampleScriptsCompile(t *testing.T) {
 				parentAcquireRequest,
 				segmentSourceSwitch,
 				cachedProduceRequest,
+				segmentResolveRequest,
+				json.RawMessage(`{"id":"seed-legacy-lease","type":"jsTransform","configuration":{"jsScript":"$ctx.ChainCache().Set('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision,JSON.stringify(msg),'1h');return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':dataType};"}}`),
 				json.RawMessage(`{"id":"end","type":"end","configuration":{}}`),
 			},
 			"connections": []map[string]string{
 				{"fromId": "parent-acquire-request", "toId": "segment-source-switch", "type": types.Success},
 				{"fromId": "segment-source-switch", "toId": "cached-produce-request", "type": "Cached"},
+				{"fromId": "segment-source-switch", "toId": "segment-resolve-request", "type": "Resolve"},
+				{"fromId": "segment-resolve-request", "toId": "end", "type": types.Success},
 				{"fromId": "cached-produce-request", "toId": "end", "type": types.Success},
 			},
 		},
@@ -218,6 +261,34 @@ func TestExampleScriptsCompile(t *testing.T) {
 	}
 	defer engine.Stop(nil)
 	sourceJSON, _ := json.Marshal(request.Source)
+	for _, legacy := range []bool{false, true} {
+		input = types.NewMsgWithJsonData(string(sourceJSON))
+		input.Metadata.PutValue("videoId", "Z4tHPyZBC8g")
+		input.Metadata.PutValue("revision", revision)
+		if legacy {
+			engine.OnMsgAndWait(input, types.WithStartNode("seed-legacy-lease"), types.WithSkipTellNext(), types.WithOnEnd(func(_ types.RuleContext, _ types.RuleMsg, err error, _ string) {
+				callbackErr = err
+			}))
+			if callbackErr != nil {
+				t.Fatal(callbackErr)
+			}
+		}
+		engine.OnMsgAndWait(input, types.WithStartNode("segment-source-switch"), types.WithOnEnd(func(_ types.RuleContext, msg types.RuleMsg, err error, _ string) {
+			output, callbackErr = msg, err
+		}))
+		if callbackErr != nil {
+			t.Fatal(callbackErr)
+		}
+		var resolve struct {
+			Args []string `json:"args"`
+		}
+		if err := json.Unmarshal(output.GetBytes(), &resolve); err != nil {
+			t.Fatal(err)
+		}
+		if len(resolve.Args) == 0 || resolve.Args[len(resolve.Args)-1] != "https://www.youtube.com/watch?v=Z4tHPyZBC8g" {
+			t.Fatalf("cold lease cache (legacy=%v) did not resolve: %s", legacy, output.GetData())
+		}
+	}
 	input = types.NewMsgWithJsonData(`{"revision":"` + revision + `","segments":[{"duration":2}]}`)
 	input.Metadata.PutValue("videoId", "Z4tHPyZBC8g")
 	input.Metadata.PutValue("source", string(sourceJSON))
@@ -226,7 +297,7 @@ func TestExampleScriptsCompile(t *testing.T) {
 	var cacheErr error
 	engine.OnMsgAndWait(input, types.WithStartNode("parent-acquire-request"), types.WithSkipTellNext(), types.WithOnEnd(func(ctx types.RuleContext, msg types.RuleMsg, err error, _ string) {
 		output, callbackErr = msg, err
-		cachedValue, cacheErr = ctx.ChainCache().Get("indexed-vod:lease:Z4tHPyZBC8g:" + revision)
+		cachedValue, cacheErr = ctx.ChainCache().Get("indexed-media:lease:Z4tHPyZBC8g:" + revision)
 	}))
 	if callbackErr != nil || cacheErr != nil || cachedValue != string(sourceJSON) {
 		t.Fatalf("cached source=%#v callbackErr=%v cacheErr=%v", cachedValue, callbackErr, cacheErr)
@@ -250,7 +321,7 @@ func TestExampleScriptsCompile(t *testing.T) {
 	if err := json.Unmarshal(output.GetBytes(), &cached); err != nil {
 		t.Fatal(err)
 	}
-	if cached.Operation != "produce" || cached.ExpectedRevision != revision || cached.Segment != 1 || cached.Source.Video.URL != request.Source.Video.URL {
+	if cached.Operation != "produce" || cached.ExpectedRevision != revision || cached.Segment != 1 || !reflect.DeepEqual(cached.Source, request.Source) {
 		t.Fatalf("cached production request = %#v", cached)
 	}
 
@@ -411,9 +482,9 @@ func TestExampleManifestCache(t *testing.T) {
 		manifest = "#EXTM3U\n#EXT-X-ENDLIST\n"
 	)
 	revision := strings.Repeat("a", 64)
-	mappingKey := "indexed-vod:manifest:youtube:" + videoID + ":avc-1080-m4a:indexed-ts-v2"
-	leaseKey := "indexed-vod:lease:" + videoID + ":" + revision
-	nodes := exampleScriptNodes(t, "manifest-request", "manifest-cache-switch", "cached-manifest-response", "manifest-response", "cached-produce-request", "commit-request")
+	mappingKey := "indexed-media:manifest:youtube:" + videoID + ":avc-1080-m4a:indexed-ts-v2"
+	leaseKey := "indexed-media:lease:" + videoID + ":" + revision
+	nodes := exampleScriptNodes(t, "manifest-request", "manifest-cache-switch", "cached-manifest-response", "manifest-response", "cached-produce-request", "commit-request", "stale-switch", "refresh-request")
 
 	t.Run("fast hit bypasses miss path", func(t *testing.T) {
 		seedLease := json.RawMessage(`{"id":"seed-lease","type":"jsTransform","configuration":{"jsScript":"$ctx.ChainCache().Set(String(msg.key),String(msg.value),'1h');return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':dataType};"}}`)
@@ -424,13 +495,15 @@ func TestExampleManifestCache(t *testing.T) {
 			"metadata": map[string]any{
 				"firstNodeIndex": 0,
 				"nodes": []json.RawMessage{
-					nodes["manifest-request"], nodes["manifest-cache-switch"], nodes["cached-manifest-response"], nodes["manifest-response"], seedLease, poison, end,
+					nodes["manifest-request"], nodes["manifest-cache-switch"], nodes["cached-manifest-response"], nodes["manifest-response"], nodes["stale-switch"], nodes["refresh-request"], seedLease, poison, end,
 				},
 				"connections": []map[string]string{
 					{"fromId": "manifest-request", "toId": "manifest-cache-switch", "type": types.Success},
 					{"fromId": "manifest-cache-switch", "toId": "cached-manifest-response", "type": "Cached"},
 					{"fromId": "manifest-cache-switch", "toId": "poison", "type": "Resolve"},
 					{"fromId": "cached-manifest-response", "toId": "end", "type": types.Success},
+					{"fromId": "stale-switch", "toId": "refresh-request", "type": "Refresh"},
+					{"fromId": "refresh-request", "toId": "end", "type": types.Success},
 				},
 			},
 		})
@@ -497,18 +570,38 @@ func TestExampleManifestCache(t *testing.T) {
 		if got := string(output.GetBytes()); got != manifest {
 			t.Fatalf("cached manifest = %q", got)
 		}
+
+		stale := types.NewMsgWithJsonData(`{"kind":"source_stale"}`)
+		stale.Metadata.PutValue("videoId", videoID)
+		stale.Metadata.PutValue("revision", revision)
+		var mappingPresent, leasePresent bool
+		engine.OnMsgAndWait(stale, types.WithStartNode("stale-switch"), types.WithOnEnd(func(ctx types.RuleContext, msg types.RuleMsg, err error, _ string) {
+			output, callbackErr = msg, err
+			mappingPresent = ctx.ChainCache().Has(mappingKey)
+			leasePresent = ctx.ChainCache().Has(leaseKey)
+		}))
+		if callbackErr != nil || mappingPresent || leasePresent || output.Metadata.GetValue("phase") != "refresh" {
+			t.Fatalf("stale refresh: mapping=%v lease=%v phase=%q err=%v", mappingPresent, leasePresent, output.Metadata.GetValue("phase"), callbackErr)
+		}
 	})
 
 	for _, tc := range []struct {
-		name      string
-		expiresAt int64
-		withLease bool
+		name          string
+		expiresAt     int64
+		withLease     bool
+		withMapping   bool
+		legacyMapping bool
+		legacyLease   bool
 	}{
-		{name: "expired mapping", expiresAt: time.Now().Add(-time.Minute).UnixMilli(), withLease: true},
-		{name: "missing matching lease", expiresAt: time.Now().Add(time.Hour).UnixMilli(), withLease: false},
+		{name: "cold cache"},
+		{name: "expired mapping", expiresAt: time.Now().Add(-time.Minute).UnixMilli(), withLease: true, withMapping: true},
+		{name: "missing matching lease", expiresAt: time.Now().Add(time.Hour).UnixMilli(), withMapping: true},
+		{name: "legacy manifest and lease", expiresAt: time.Now().Add(time.Hour).UnixMilli(), withMapping: true, withLease: true, legacyMapping: true, legacyLease: true},
+		{name: "legacy manifest with current lease", expiresAt: time.Now().Add(time.Hour).UnixMilli(), withMapping: true, withLease: true, legacyMapping: true},
+		{name: "current manifest with legacy lease", expiresAt: time.Now().Add(time.Hour).UnixMilli(), withMapping: true, withLease: true, legacyLease: true},
 	} {
 		t.Run(tc.name+" refuses hit", func(t *testing.T) {
-			seed := json.RawMessage(`{"id":"seed","type":"jsTransform","configuration":{"jsScript":"var cache=$ctx.ChainCache();cache.Set(String(msg.mappingKey),JSON.stringify(msg.mapping),'1h');if(msg.withLease)cache.Set(String(msg.leaseKey),'lease','1h');return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':dataType};"}}`)
+			seed := json.RawMessage(`{"id":"seed","type":"jsTransform","configuration":{"jsScript":"var cache=$ctx.ChainCache();if(msg.withMapping)cache.Set(String(msg.mappingKey),JSON.stringify(msg.mapping),'1h');if(msg.withLease)cache.Set(String(msg.leaseKey),'lease','1h');return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':dataType};"}}`)
 			miss := json.RawMessage(`{"id":"miss","type":"jsTransform","configuration":{"jsScript":"return {'msg':{'miss':true},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"}}`)
 			end := json.RawMessage(`{"id":"end","type":"end","configuration":{}}`)
 			dsl, err := json.Marshal(map[string]any{
@@ -534,11 +627,19 @@ func TestExampleManifestCache(t *testing.T) {
 			}
 			defer engine.Stop(nil)
 
+			seedMappingKey, seedLeaseKey := mappingKey, leaseKey
+			if tc.legacyMapping {
+				seedMappingKey = strings.Replace(mappingKey, "indexed-media:", "indexed-vod:", 1)
+			}
+			if tc.legacyLease {
+				seedLeaseKey = strings.Replace(leaseKey, "indexed-media:", "indexed-vod:", 1)
+			}
 			seedBody, _ := json.Marshal(map[string]any{
-				"mappingKey": mappingKey,
-				"mapping":    map[string]any{"manifest": manifest, "revision": revision, "leaseExpiresAtMs": tc.expiresAt},
-				"withLease":  tc.withLease,
-				"leaseKey":   leaseKey,
+				"mappingKey":  seedMappingKey,
+				"mapping":     map[string]any{"manifest": manifest, "revision": revision, "leaseExpiresAtMs": tc.expiresAt},
+				"withLease":   tc.withLease,
+				"withMapping": tc.withMapping,
+				"leaseKey":    seedLeaseKey,
 			})
 			var callbackErr error
 			engine.OnMsgAndWait(types.NewMsgWithJsonData(string(seedBody)), types.WithStartNode("seed"), types.WithSkipTellNext(), types.WithOnEnd(func(_ types.RuleContext, _ types.RuleMsg, err error, _ string) {
@@ -554,6 +655,12 @@ func TestExampleManifestCache(t *testing.T) {
 			engine.OnMsgAndWait(request, types.WithStartNode("manifest-request"), types.WithOnEnd(func(ctx types.RuleContext, msg types.RuleMsg, err error, _ string) {
 				output, callbackErr = msg, err
 				mappingPresent = ctx.ChainCache().Has(mappingKey)
+				if tc.legacyMapping && !ctx.ChainCache().Has(seedMappingKey) {
+					t.Error("legacy manifest was removed instead of ignored")
+				}
+				if tc.legacyLease && !ctx.ChainCache().Has(seedLeaseKey) {
+					t.Error("legacy lease was removed instead of ignored")
+				}
 			}))
 			if callbackErr != nil {
 				t.Fatal(callbackErr)
@@ -572,7 +679,7 @@ func TestExampleManifestCache(t *testing.T) {
 
 	t.Run("cached member does not restore source lease at commit", func(t *testing.T) {
 		seedLease := json.RawMessage(`{"id":"seed-lease","type":"jsTransform","configuration":{"jsScript":"$ctx.ChainCache().Set(String(msg.key),String(msg.value),'1h');return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':dataType};"}}`)
-		deleteLease := json.RawMessage(`{"id":"delete-lease","type":"jsTransform","configuration":{"jsScript":"$ctx.ChainCache().Delete('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision);return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':dataType};"}}`)
+		deleteLease := json.RawMessage(`{"id":"delete-lease","type":"jsTransform","configuration":{"jsScript":"$ctx.ChainCache().Delete('indexed-media:lease:'+metadata.videoId+':'+metadata.revision);return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':dataType};"}}`)
 		end := json.RawMessage(`{"id":"end","type":"end","configuration":{}}`)
 		dsl, err := json.Marshal(map[string]any{
 			"ruleChain": map[string]any{"id": "cached-member-no-lease-extension-test", "root": true},
@@ -669,18 +776,18 @@ func exampleScriptNodes(t *testing.T, ids ...string) map[string]json.RawMessage 
 }
 
 func TestRuleGoSharedOwnerAndBorrower(t *testing.T) {
-	if err := rulego.Registry.Register(&indexedVodNode{}); err != nil {
+	if err := rulego.Registry.Register(&indexedMediaNode{}); err != nil {
 		t.Fatal(err)
 	}
 	defer rulego.Registry.Unregister(componentType)
 	dsl := fmt.Sprintf(`{
-  "ruleChain":{"id":"indexed-vod-test","root":true},
+  "ruleChain":{"id":"indexed-media-test","root":true},
   "metadata":{
     "firstNodeIndex":1,
     "nodes":[
-      {"id":"owner","type":"indexedVod","configuration":{
+      {"id":"owner","type":"indexedMedia","configuration":{
         "root":%q,"ffmpegAddress":"127.0.0.1:1","ffmpegSecret":"test"}},
-      {"id":"borrower","type":"indexedVod","configuration":{"root":"ref://owner"}},
+      {"id":"borrower","type":"indexedMedia","configuration":{"root":"ref://owner"}},
       {"id":"end","type":"end","configuration":{}}
     ],
     "connections":[
@@ -690,7 +797,7 @@ func TestRuleGoSharedOwnerAndBorrower(t *testing.T) {
   }
 }`, t.TempDir())
 	pool := rulego.NewRuleGo()
-	engine, err := pool.New("indexed-vod-test", []byte(dsl), rulego.WithConfig(rulego.NewConfig()))
+	engine, err := pool.New("indexed-media-test", []byte(dsl), rulego.WithConfig(rulego.NewConfig()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -707,5 +814,92 @@ func TestRuleGoSharedOwnerAndBorrower(t *testing.T) {
 	}
 	if relation != types.Failure || failure.Kind != "invalid_input" {
 		t.Fatalf("relation=%q failure=%#v", relation, failure)
+	}
+}
+
+type nodeResultContext struct {
+	types.RuleContext
+	output   types.RuleMsg
+	relation string
+}
+
+func (*nodeResultContext) GetContext() context.Context { return context.Background() }
+func (ctx *nodeResultContext) TellSuccess(msg types.RuleMsg) {
+	ctx.output, ctx.relation = msg, types.Success
+}
+func (ctx *nodeResultContext) TellFailure(msg types.RuleMsg, _ error) {
+	ctx.output, ctx.relation = msg, types.Failure
+}
+
+func TestNodeRequiresPairedTracks(t *testing.T) {
+	server := rangeServer(t, nil)
+	defer server.Close()
+	root := t.TempDir()
+	staging := filepath.Join(root, "generation")
+	if err := os.Mkdir(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	node := &indexedMediaNode{}
+	if err := node.Init(rulego.NewConfig(), types.Configuration{
+		"root": root, "ffmpegAddress": "127.0.0.1:1", "ffmpegSecret": "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer node.Destroy()
+	manager, err := node.GetSafely()
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := strings.Repeat("b", 64)
+	source := testLease(server.URL+"/video", server.URL+"/audio")
+	manager.inspectFn = func(_ context.Context, lease mediaLease) (*sourceBundle, error) {
+		return testBundle(lease, revision), nil
+	}
+	manager.runFn = func(_ context.Context, _ ffmpegclient.Config, invocation ffmpegclient.Invocation, _ ffmpegclient.OutputFunc) (int, error) {
+		return 0, os.WriteFile(invocation.Args[len(invocation.Args)-1], []byte("mpeg-ts"), 0o600)
+	}
+	for _, operation := range []string{"inspect", "produce"} {
+		for _, tracks := range []string{"paired", "missing-video", "missing-audio"} {
+			t.Run(operation+"/"+tracks, func(t *testing.T) {
+				sourceBody, err := json.Marshal(source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var lease map[string]any
+				if err := json.Unmarshal(sourceBody, &lease); err != nil {
+					t.Fatal(err)
+				}
+				if tracks != "paired" {
+					delete(lease, strings.TrimPrefix(tracks, "missing-"))
+				}
+				request := map[string]any{"operation": operation, "source": lease}
+				if operation == "produce" {
+					request["expectedRevision"] = revision
+					request["segment"] = 0
+					request["stagingDir"] = staging
+					request["maxBytes"] = 1024
+					request["publishBy"] = time.Now().Add(time.Hour)
+				}
+				body, err := json.Marshal(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx := &nodeResultContext{}
+				node.OnMsg(ctx, types.NewMsgWithJsonData(string(body)))
+				if tracks == "paired" {
+					if ctx.relation != types.Success {
+						t.Fatalf("paired request relation=%q output=%s", ctx.relation, ctx.output.GetData())
+					}
+				} else {
+					var failure nodeError
+					if err := json.Unmarshal(ctx.output.GetBytes(), &failure); err != nil {
+						t.Fatal(err)
+					}
+					if ctx.relation != types.Failure || failure.Kind != "invalid_input" {
+						t.Fatalf("relation=%q failure=%#v", ctx.relation, failure)
+					}
+				}
+			})
+		}
 	}
 }

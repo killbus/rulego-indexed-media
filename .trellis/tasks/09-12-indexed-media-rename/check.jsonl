@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend scope and documentation-language requirements."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review lease identity, stale-source handling, RuleGo handoff, and required graph tests."}
+{"file":".trellis/tasks/09-12-indexed-media-rename/research/source-impact.md","reason":"Check coherent breaking rename, old-type rejection, fixed revision, paired-track regression, and ABI evidence."}
+{"file":".trellis/tasks/09-12-indexed-media-rename/research/downstream-impact.md","reason":"Verify owner boundaries, preserved historical/audio-task context, and no unsupported deployment claims."}

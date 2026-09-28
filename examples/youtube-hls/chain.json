@@ -1,7 +1,7 @@
 {
   "ruleChain": {
     "id": "youtube-indexed-hls",
-    "name": "YouTube through generic indexed VOD",
+    "name": "YouTube through generic indexed media",
     "root": true,
     "debugMode": false,
     "additionalInfo": {"noDefaultInput": true, "runLogMode": "off"}
@@ -55,7 +55,7 @@
         "name": "Check cached YouTube manifest",
         "additionalInfo": {"layoutX": 320, "layoutY": 300},
         "configuration": {
-          "jsScript": "var id=String(metadata.videoId||'');if(!/^[A-Za-z0-9_-]{6,32}$/.test(id))throw new Error('invalid videoId');metadata.videoId=id;metadata.phase='initial';metadata.statusCode='';metadata.errorBody='';var key='indexed-vod:manifest:youtube:'+id+':avc-1080-m4a:indexed-ts-v2',cache=$ctx.ChainCache(),cached=null,valid=false;metadata.manifestCacheKey=key;if(cache.Has(key)){try{cached=JSON.parse(String(cache.Get(key)));var revision=String(cached.revision||''),manifest=String(cached.manifest||''),expires=Number(cached.leaseExpiresAtMs||0);valid=/^[0-9a-f]{64}$/.test(revision)&&manifest.indexOf('#EXTM3U\\n')===0&&expires>Date.now()&&cache.Has('indexed-vod:lease:'+id+':'+revision);if(valid){metadata.revision=revision;metadata.manifest=manifest;metadata.leaseExpiresAtMs=String(expires);}}catch(e){valid=false;}if(!valid)cache.Delete(key);}return {'msg':{'cached':valid},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "var id=String(metadata.videoId||'');if(!/^[A-Za-z0-9_-]{6,32}$/.test(id))throw new Error('invalid videoId');metadata.videoId=id;metadata.phase='initial';metadata.statusCode='';metadata.errorBody='';var key='indexed-media:manifest:youtube:'+id+':avc-1080-m4a:indexed-ts-v2',cache=$ctx.ChainCache(),cached=null,valid=false;metadata.manifestCacheKey=key;if(cache.Has(key)){try{cached=JSON.parse(String(cache.Get(key)));var revision=String(cached.revision||''),manifest=String(cached.manifest||''),expires=Number(cached.leaseExpiresAtMs||0);valid=/^[0-9a-f]{64}$/.test(revision)&&manifest.indexOf('#EXTM3U\\n')===0&&expires>Date.now()&&cache.Has('indexed-media:lease:'+id+':'+revision);if(valid){metadata.revision=revision;metadata.manifest=manifest;metadata.leaseExpiresAtMs=String(expires);}}catch(e){valid=false;}if(!valid)cache.Delete(key);}return {'msg':{'cached':valid},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
@@ -138,10 +138,10 @@
       },
       {
         "id": "inspect",
-        "type": "indexedVod",
+        "type": "indexedMedia",
         "name": "Inspect indexed media",
         "additionalInfo": {"layoutX": 2240, "layoutY": 420},
-        "configuration": {"root": "ref://indexed-vod"}
+        "configuration": {"root": "ref://indexed-media"}
       },
       {
         "id": "inspection-branch",
@@ -158,7 +158,7 @@
         "name": "Build VOD playlist and acquire parent",
         "additionalInfo": {"layoutX": 2720, "layoutY": 260},
         "configuration": {
-          "jsScript": "var revision=String(msg.revision||''),segments=msg.segments||[];if(!/^[0-9a-f]{64}$/.test(revision)||segments.length<1)throw new Error('invalid source timeline');var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before inspection completed');metadata.leaseCacheTtl=String(ttl)+'ms';$ctx.ChainCache().Set('indexed-vod:lease:'+metadata.videoId+':'+revision,metadata.source,metadata.leaseCacheTtl);var max=0,lines=['#EXTM3U','#EXT-X-VERSION:3'];for(var i=0;i<segments.length;i++){var d=Number(segments[i].duration);if(!(d>0))throw new Error('invalid segment duration');if(d>max)max=d;}lines.push('#EXT-X-TARGETDURATION:'+Math.ceil(max),'#EXT-X-MEDIA-SEQUENCE:0','#EXT-X-PLAYLIST-TYPE:VOD','#EXT-X-INDEPENDENT-SEGMENTS');for(var j=0;j<segments.length;j++)lines.push('#EXTINF:'+Number(segments[j].duration).toFixed(6)+',','/youtube/'+metadata.videoId+'/segments/'+revision+'/'+j+'.ts');lines.push('#EXT-X-ENDLIST','');metadata.revision=revision;metadata.manifest=lines.join('\\n');return {'msg':{'operation':'acquire','key':'youtube:'+metadata.videoId+':hls','fingerprint':'indexed-ts-v2:'+revision,'ttlMs':21600000,'maxBytes':33554432,'productionTimeoutMs':300000},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "var revision=String(msg.revision||''),segments=msg.segments||[];if(!/^[0-9a-f]{64}$/.test(revision)||segments.length<1)throw new Error('invalid source timeline');var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before inspection completed');metadata.leaseCacheTtl=String(ttl)+'ms';$ctx.ChainCache().Set('indexed-media:lease:'+metadata.videoId+':'+revision,metadata.source,metadata.leaseCacheTtl);var max=0,lines=['#EXTM3U','#EXT-X-VERSION:3'];for(var i=0;i<segments.length;i++){var d=Number(segments[i].duration);if(!(d>0))throw new Error('invalid segment duration');if(d>max)max=d;}lines.push('#EXT-X-TARGETDURATION:'+Math.ceil(max),'#EXT-X-MEDIA-SEQUENCE:0','#EXT-X-PLAYLIST-TYPE:VOD','#EXT-X-INDEPENDENT-SEGMENTS');for(var j=0;j<segments.length;j++)lines.push('#EXTINF:'+Number(segments[j].duration).toFixed(6)+',','/youtube/'+metadata.videoId+'/segments/'+revision+'/'+j+'.ts');lines.push('#EXT-X-ENDLIST','');metadata.revision=revision;metadata.manifest=lines.join('\\n');return {'msg':{'operation':'acquire','key':'youtube:'+metadata.videoId+':hls','fingerprint':'indexed-ts-v2:'+revision,'ttlMs':21600000,'maxBytes':33554432,'productionTimeoutMs':300000},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
@@ -183,7 +183,7 @@
         "name": "Resolve manifest parent",
         "additionalInfo": {"layoutX": 320, "layoutY": 800},
         "configuration": {
-          "jsScript": "var id=String(metadata.videoId||''),revision=String(metadata.revision||''),match=/^([0-9]+)\\.ts$/.exec(String(metadata.segment||''));if(!/^[A-Za-z0-9_-]{6,32}$/.test(id)||!/^[0-9a-f]{64}$/.test(revision)||!match)throw new Error('invalid segment path');metadata.videoId=id;metadata.revision=revision;metadata.segment=String(Number(match[1]));metadata.manifestCacheKey='indexed-vod:manifest:youtube:'+id+':avc-1080-m4a:indexed-ts-v2';return {'msg':{'operation':'acquire','key':'youtube:'+id+':hls','fingerprint':'indexed-ts-v2:'+revision,'ttlMs':21600000,'maxBytes':33554432,'productionTimeoutMs':300000},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "var id=String(metadata.videoId||''),revision=String(metadata.revision||''),match=/^([0-9]+)\\.ts$/.exec(String(metadata.segment||''));if(!/^[A-Za-z0-9_-]{6,32}$/.test(id)||!/^[0-9a-f]{64}$/.test(revision)||!match)throw new Error('invalid segment path');metadata.videoId=id;metadata.revision=revision;metadata.segment=String(Number(match[1]));metadata.manifestCacheKey='indexed-media:manifest:youtube:'+id+':avc-1080-m4a:indexed-ts-v2';return {'msg':{'operation':'acquire','key':'youtube:'+id+':hls','fingerprint':'indexed-ts-v2:'+revision,'ttlMs':21600000,'maxBytes':33554432,'productionTimeoutMs':300000},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
@@ -247,7 +247,7 @@
         "name": "Reuse cached source lease",
         "additionalInfo": {"layoutX": 1760, "layoutY": 900},
         "configuration": {
-          "jsScript": "return [$ctx.ChainCache().Has('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision)?'Cached':'Resolve'];"
+          "jsScript": "return [$ctx.ChainCache().Has('indexed-media:lease:'+metadata.videoId+':'+metadata.revision)?'Cached':'Resolve'];"
         }
       },
       {
@@ -256,7 +256,7 @@
         "name": "Produce from cached source lease",
         "additionalInfo": {"layoutX": 2000, "layoutY": 800},
         "configuration": {
-          "jsScript": "var source=JSON.parse(String($ctx.ChainCache().Get('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision)));metadata.source=JSON.stringify(source);return {'msg':{'operation':'produce','source':source,'expectedRevision':metadata.revision,'segment':Number(metadata.segment),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "var source=JSON.parse(String($ctx.ChainCache().Get('indexed-media:lease:'+metadata.videoId+':'+metadata.revision)));metadata.source=JSON.stringify(source);return {'msg':{'operation':'produce','source':source,'expectedRevision':metadata.revision,'segment':Number(metadata.segment),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
@@ -265,7 +265,7 @@
         "name": "Resolve source for demand member",
         "additionalInfo": {"layoutX": 2000, "layoutY": 1000},
         "configuration": {
-          "jsScript": "metadata.statusCode='';metadata.errorBody='';$ctx.ChainCache().Delete(metadata.manifestCacheKey||('indexed-vod:manifest:youtube:'+metadata.videoId+':avc-1080-m4a:indexed-ts-v2'));return {'msg':{'timeout_seconds':180,'args':['--quiet','--no-warnings','--no-playlist','--skip-download','--cookies','/data/yt.txt','-f',\"bv*[height>=1080][vcodec~='^(avc1|h264)']+ba[ext=m4a]\",'-S','res:1080','--print','%(.{id,requested_formats})j','https://www.youtube.com/watch?v='+metadata.videoId]},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "metadata.statusCode='';metadata.errorBody='';$ctx.ChainCache().Delete(metadata.manifestCacheKey||('indexed-media:manifest:youtube:'+metadata.videoId+':avc-1080-m4a:indexed-ts-v2'));return {'msg':{'timeout_seconds':180,'args':['--quiet','--no-warnings','--no-playlist','--skip-download','--cookies','/data/yt.txt','-f',\"bv*[height>=1080][vcodec~='^(avc1|h264)']+ba[ext=m4a]\",'-S','res:1080','--print','%(.{id,requested_formats})j','https://www.youtube.com/watch?v='+metadata.videoId]},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
@@ -274,15 +274,15 @@
         "name": "Verify revision and produce member",
         "additionalInfo": {"layoutX": 2720, "layoutY": 580},
         "configuration": {
-          "jsScript": "if(String(msg.revision||'')!==String(metadata.revision||''))throw new Error('source revision changed');var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before inspection completed');metadata.leaseCacheTtl=String(ttl)+'ms';$ctx.ChainCache().Set('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision,metadata.source,metadata.leaseCacheTtl);return {'msg':{'operation':'produce','source':JSON.parse(metadata.source),'expectedRevision':metadata.revision,'segment':Number(metadata.segment||0),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "if(String(msg.revision||'')!==String(metadata.revision||''))throw new Error('source revision changed');var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before inspection completed');metadata.leaseCacheTtl=String(ttl)+'ms';$ctx.ChainCache().Set('indexed-media:lease:'+metadata.videoId+':'+metadata.revision,metadata.source,metadata.leaseCacheTtl);return {'msg':{'operation':'produce','source':JSON.parse(metadata.source),'expectedRevision':metadata.revision,'segment':Number(metadata.segment||0),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
         "id": "produce",
-        "type": "indexedVod",
+        "type": "indexedMedia",
         "name": "Produce one indexed member",
         "additionalInfo": {"layoutX": 3440, "layoutY": 700},
-        "configuration": {"root": "ref://indexed-vod"}
+        "configuration": {"root": "ref://indexed-media"}
       },
       {
         "id": "stale-switch",
@@ -299,7 +299,7 @@
         "name": "Refresh source lease once",
         "additionalInfo": {"layoutX": 3680, "layoutY": 940},
         "configuration": {
-          "jsScript": "metadata.retry='1';metadata.phase='refresh';metadata.statusCode='';metadata.errorBody='';$ctx.ChainCache().Delete('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision);$ctx.ChainCache().Delete(metadata.manifestCacheKey||('indexed-vod:manifest:youtube:'+metadata.videoId+':avc-1080-m4a:indexed-ts-v2'));return {'msg':{'timeout_seconds':180,'args':['--quiet','--no-warnings','--no-playlist','--skip-download','--cookies','/data/yt.txt','-f',\"bv*[height>=1080][vcodec~='^(avc1|h264)']+ba[ext=m4a]\",'-S','res:1080','--print','%(.{id,requested_formats})j','https://www.youtube.com/watch?v='+metadata.videoId]},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "metadata.retry='1';metadata.phase='refresh';metadata.statusCode='';metadata.errorBody='';$ctx.ChainCache().Delete('indexed-media:lease:'+metadata.videoId+':'+metadata.revision);$ctx.ChainCache().Delete(metadata.manifestCacheKey||('indexed-media:manifest:youtube:'+metadata.videoId+':avc-1080-m4a:indexed-ts-v2'));return {'msg':{'timeout_seconds':180,'args':['--quiet','--no-warnings','--no-playlist','--skip-download','--cookies','/data/yt.txt','-f',\"bv*[height>=1080][vcodec~='^(avc1|h264)']+ba[ext=m4a]\",'-S','res:1080','--print','%(.{id,requested_formats})j','https://www.youtube.com/watch?v='+metadata.videoId]},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
@@ -355,10 +355,10 @@
       },
       {
         "id": "refresh-inspect",
-        "type": "indexedVod",
+        "type": "indexedMedia",
         "name": "Verify refreshed source revision",
         "additionalInfo": {"layoutX": 3200, "layoutY": 1180},
-        "configuration": {"root": "ref://indexed-vod"}
+        "configuration": {"root": "ref://indexed-media"}
       },
       {
         "id": "refresh-produce-request",
@@ -366,15 +366,15 @@
         "name": "Retry with verified source lease",
         "additionalInfo": {"layoutX": 2960, "layoutY": 1180},
         "configuration": {
-          "jsScript": "if(String(msg.revision||'')!==String(metadata.revision||''))throw new Error('source revision changed');var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before inspection completed');metadata.leaseCacheTtl=String(ttl)+'ms';$ctx.ChainCache().Set('indexed-vod:lease:'+metadata.videoId+':'+metadata.revision,metadata.source,metadata.leaseCacheTtl);return {'msg':{'operation':'produce','source':JSON.parse(metadata.source),'expectedRevision':metadata.revision,'segment':Number(metadata.segment||0),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "if(String(msg.revision||'')!==String(metadata.revision||''))throw new Error('source revision changed');var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before inspection completed');metadata.leaseCacheTtl=String(ttl)+'ms';$ctx.ChainCache().Set('indexed-media:lease:'+metadata.videoId+':'+metadata.revision,metadata.source,metadata.leaseCacheTtl);return {'msg':{'operation':'produce','source':JSON.parse(metadata.source),'expectedRevision':metadata.revision,'segment':Number(metadata.segment||0),'stagingDir':metadata.stagingDir,'maxBytes':Number(metadata.maxBytes),'publishBy':metadata.publishBy},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
         "id": "refresh-produce",
-        "type": "indexedVod",
+        "type": "indexedMedia",
         "name": "Produce with refreshed lease",
         "additionalInfo": {"layoutX": 2720, "layoutY": 1180},
-        "configuration": {"root": "ref://indexed-vod"}
+        "configuration": {"root": "ref://indexed-media"}
       },
       {
         "id": "commit-request",
@@ -405,7 +405,7 @@
         "name": "Return HLS playlist",
         "additionalInfo": {"layoutX": 4400, "layoutY": 420},
         "configuration": {
-          "jsScript": "var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before manifest publication');var value={'manifest':String(metadata.manifest||''),'revision':String(metadata.revision||''),'leaseExpiresAtMs':expires};$ctx.ChainCache().Set(metadata.manifestCacheKey||('indexed-vod:manifest:youtube:'+metadata.videoId+':avc-1080-m4a:indexed-ts-v2'),JSON.stringify(value),String(ttl)+'ms');return {'msg':metadata.manifest,'metadata':{'Content-Type':'application/vnd.apple.mpegurl'},'msgType':msgType,'dataType':'TEXT'};"
+          "jsScript": "var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before manifest publication');var value={'manifest':String(metadata.manifest||''),'revision':String(metadata.revision||''),'leaseExpiresAtMs':expires};$ctx.ChainCache().Set(metadata.manifestCacheKey||('indexed-media:manifest:youtube:'+metadata.videoId+':avc-1080-m4a:indexed-ts-v2'),JSON.stringify(value),String(ttl)+'ms');return {'msg':metadata.manifest,'metadata':{'Content-Type':'application/vnd.apple.mpegurl'},'msgType':msgType,'dataType':'TEXT'};"
         }
       },
       {

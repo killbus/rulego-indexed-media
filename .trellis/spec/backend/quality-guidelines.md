@@ -110,11 +110,16 @@ return {msg: {operation: 'resolve', resourceId: String(msg.resourceId), member: 
 
 ### 1. Scope / Trigger
 
-Apply this contract when a node caches immutable media indexes while callers
-refresh short-lived representation URLs or headers.
+Apply this contract when maintaining indexed-media registration, input validation,
+or immutable index caching while callers refresh representation URLs or headers.
 
 ### 2. Signatures
 
+- RuleGo type: `indexedMedia`, label `Indexed Media`, operations `inspect` and
+  `produce`, and relations `Success` / `Failure`.
+- Go module: `github.com/killbus/rulego-indexed-media`. Candidate artifacts use
+  `indexed-media-rulego-v<VERSION>-linux-<arch>.so` with matching checksum and ABI
+  sidecars; a renamed filename does not establish the embedded module identity.
 - Input lease: `sourceKey`, plus video/audio `url`, `headers`, `container`, and
   `codec`.
 - Inspection result: stable `revision`, `duration`, and segment durations.
@@ -123,11 +128,19 @@ refresh short-lived representation URLs or headers.
 
 ### 3. Contracts
 
+- Export only the current registered type. Component type, caller-selected node
+  ID, and storage root are separate identities; shipped owners use `indexed-media`
+  and borrowers use `ref://indexed-media`, while other valid caller IDs work.
+- Both operations require distinct valid H.264/MP4 video and AAC/M4A-or-MP4 audio
+  representations. The media-wide name does not make either track optional.
 - Cache and singleflight inspection by the complete normalized lease.
 - A RuleGo composition may memoize the complete normalized lease as a short
   lived performance hint. The YouTube example uses
-  `indexed-vod:lease:<videoId>:<revision>` in `ChainCache`; a hit bypasses the
+  `indexed-media:lease:<videoId>:<revision>` in `ChainCache`; a hit bypasses the
   resolver, while a miss still follows the ordinary resolve and inspect path.
+- All manifest/lease cache readers, writers, and invalidators share the
+  `indexed-media:` namespace. Other namespaces are not fallback inputs; a cold
+  cache follows normal resolution without moving retained resource data.
 - Resolver-lease cache state is neither identity nor durable state. Its TTL
   must be shorter than the expected provider lease, and a RuleGo restart must
   remain correct by resolving a fresh lease on the resulting cache miss.
@@ -139,6 +152,8 @@ refresh short-lived representation URLs or headers.
 
 ### 4. Validation & Error Matrix
 
+- Unregistered component type -> graph-load failure, not an alias lookup.
+- Missing video or audio representation -> `invalid_input` for either operation.
 - 401/403/404/410 from a representation -> `source_stale`.
 - Missing, expired, or restart-lost RuleGo lease cache -> resolve and inspect.
 - Refreshed lease with different immutable evidence -> `revision_changed`.
@@ -157,13 +172,23 @@ refresh short-lived representation URLs or headers.
 
 ### 6. Tests Required
 
+- Assert exactly one exported `indexedMedia` type with the expected label and
+  relations. In an isolated registry, load the new type and reject `indexedVod`.
+- Load shipped owner/ref graphs and retain coverage for arbitrary valid owner IDs.
+- Reject each missing track for inspect and produce, with a valid paired control.
 - Assert concurrent identical leases perform one inspection.
 - Execute the RuleGo cache writer and reader in separate traversals and assert
   the second traversal emits `produce` without entering the resolver branch.
+- Prepopulate old manifest/lease namespaces and assert normal resolution. Cover
+  cold miss, current-namespace write/warm hit, and stale eviction of both keys.
 - Assert changed URLs/headers cause inspection and are used by production.
 - Assert transient access fields do not alter revision, while changed indexes
   do.
+- Pin a literal revision digest using distinct video/audio indexes and init sizes
+  to guard the exact hash framing and track order, not only relative equality.
 - Assert stale access and revision change remain distinct failures.
+- CI verifies embedded module identity, new-only registration, shared references,
+  matching-host ABI on both architectures, peer coexistence, and paired HLS seek.
 
 ### 7. Wrong vs Correct
 

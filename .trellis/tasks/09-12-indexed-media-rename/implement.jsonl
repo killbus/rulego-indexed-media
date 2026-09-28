@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend guideline routing and documentation language for this Go plugin."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Preserve routing-node handoff, complete-lease caching, revision, and error contracts."}
+{"file":".trellis/tasks/09-12-indexed-media-rename/research/source-impact.md","reason":"Classified naming inventory, unchanged media identity, CI boundaries, and regression requirements."}
+{"file":".trellis/tasks/09-12-indexed-media-rename/research/downstream-impact.md","reason":"Known downstream owners, historical exclusions, and separately authorized cutover obligations."}

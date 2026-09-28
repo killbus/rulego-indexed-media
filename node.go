@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	componentType         = "indexedVod"
+	componentType         = "indexedMedia"
 	componentVersion      = "0.2.0"
 	maxRequestBytes       = 8 << 20
 	maxProducedBytes      = int64(1 << 30)
@@ -39,7 +39,7 @@ type nodeConfiguration struct {
 	ProduceTimeoutMs    int64  `json:"produceTimeoutMs" label:"Produce timeout (ms)" ref:"shared"`
 }
 
-type indexedVodNode struct {
+type indexedMediaNode struct {
 	base.SharedNode[*sourceManager]
 	Config nodeConfiguration
 }
@@ -92,14 +92,14 @@ type nodeError struct {
 	Message string `json:"message"`
 }
 
-func (*indexedVodNode) Type() string { return componentType }
+func (*indexedMediaNode) Type() string { return componentType }
 
-func (*indexedVodNode) Def() types.ComponentForm {
+func (*indexedMediaNode) Def() types.ComponentForm {
 	relations := []string{types.Success, types.Failure}
 	return types.ComponentForm{
 		Type:          componentType,
 		Category:      "external",
-		Label:         "Indexed VOD",
+		Label:         "Indexed Media",
 		Desc:          "Inspect and produce bounded indexed-media VOD members",
 		Version:       componentVersion,
 		ComponentKind: types.ComponentKindNative,
@@ -107,14 +107,14 @@ func (*indexedVodNode) Def() types.ComponentForm {
 	}
 }
 
-func (*indexedVodNode) New() types.Node { return &indexedVodNode{} }
+func (*indexedMediaNode) New() types.Node { return &indexedMediaNode{} }
 
-func (n *indexedVodNode) Init(ruleConfig types.Config, configuration types.Configuration) error {
+func (n *indexedMediaNode) Init(ruleConfig types.Config, configuration types.Configuration) error {
 	if err := maps.Map2Struct(configuration, &n.Config); err != nil {
-		return errors.New("indexedVod: invalid configuration")
+		return errors.New("indexedMedia: invalid configuration")
 	}
 	if strings.TrimSpace(n.Config.Root) == "" {
-		return errors.New("indexedVod: root is required")
+		return errors.New("indexedMedia: root is required")
 	}
 	if !strings.HasPrefix(n.Config.Root, types.NodeConfigurationPrefixInstanceId) {
 		if err := normalizeOwnerConfiguration(&n.Config); err != nil {
@@ -130,7 +130,7 @@ func (n *indexedVodNode) Init(ruleConfig types.Config, configuration types.Confi
 	return nil
 }
 
-func (n *indexedVodNode) OnMsg(ruleContext types.RuleContext, msg types.RuleMsg) {
+func (n *indexedMediaNode) OnMsg(ruleContext types.RuleContext, msg types.RuleMsg) {
 	manager, err := n.SharedNode.GetSafely()
 	if err != nil {
 		tellNodeFailure(ruleContext, msg, problem("configuration", "indexed media owner is unavailable"))
@@ -163,21 +163,21 @@ func (n *indexedVodNode) OnMsg(ruleContext types.RuleContext, msg types.RuleMsg)
 	}
 }
 
-func (n *indexedVodNode) Destroy() { _ = n.SharedNode.Close() }
+func (n *indexedMediaNode) Destroy() { _ = n.SharedNode.Close() }
 
 func normalizeOwnerConfiguration(config *nodeConfiguration) error {
 	if strings.TrimSpace(config.FFmpegAddress) == "" || config.FFmpegSecret == "" {
-		return errors.New("indexedVod: ffmpeg connection is required")
+		return errors.New("indexedMedia: ffmpeg connection is required")
 	}
 	root, err := filepath.Abs(config.Root)
 	if err != nil {
-		return errors.New("indexedVod: invalid staging root")
+		return errors.New("indexedMedia: invalid staging root")
 	}
 	config.Root = filepath.Clean(root)
 	const maxDurationMillis = int64(math.MaxInt64) / int64(time.Millisecond)
 	for _, value := range []*int64{&config.IndexTimeoutMs, &config.FFmpegDialTimeoutMs, &config.ProduceTimeoutMs} {
 		if *value < 0 || *value > maxDurationMillis {
-			return errors.New("indexedVod: timeout is out of range")
+			return errors.New("indexedMedia: timeout is out of range")
 		}
 	}
 	if config.IndexTimeoutMs == 0 {

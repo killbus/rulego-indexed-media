@@ -10,5 +10,5 @@ type pluginRegistry struct{}
 func (*pluginRegistry) Init() error { return nil }
 
 func (*pluginRegistry) Components() []types.Node {
-	return []types.Node{&indexedVodNode{}}
+	return []types.Node{&indexedMediaNode{}}
 }

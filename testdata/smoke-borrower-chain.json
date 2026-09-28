@@ -1,7 +1,7 @@
 {
   "ruleChain": {
-    "id": "indexed-vod-smoke",
-    "name": "Indexed VOD ref smoke",
+    "id": "indexed-media-smoke",
+    "name": "Indexed Media ref smoke",
     "root": true
   },
   "metadata": {
@@ -9,8 +9,8 @@
     "nodes": [
       {
         "id": "borrower",
-        "type": "indexedVod",
-        "configuration": {"root": "ref://indexed-vod"}
+        "type": "indexedMedia",
+        "configuration": {"root": "ref://indexed-media"}
       },
       {"id": "end", "type": "end", "configuration": {}}
     ],

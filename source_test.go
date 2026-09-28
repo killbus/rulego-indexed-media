@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -157,6 +158,27 @@ func TestRevisionExcludesLeaseURLsAndHeaders(t *testing.T) {
 	}
 }
 
+func TestSourceRevisionFixedDigest(t *testing.T) {
+	source := mediaLease{
+		SourceKey: "fixture:paired-index-v1",
+		Video:     mediaRepresentation{Container: "MP4", Codec: "AVC1.640028"},
+		Audio:     mediaRepresentation{Container: "M4A", Codec: "MP4A.40.2"},
+	}
+	video := mediaIndex{
+		InitSize: 0x0102030405060708,
+		Raw:      []byte{0x00, 0x76, 0x69, 0x64, 0x65, 0x6f, 0xff},
+	}
+	audio := mediaIndex{
+		InitSize: 0x1112131415161718,
+		Raw:      []byte{0x80, 0x61, 0x75, 0x64, 0x69, 0x6f, 0x00, 0xfe},
+	}
+	// Pin the hash framing and track order from pre-rename commit ab2217bccb46.
+	const want = "d6e815a371172793a89d537156d03db8394870361c9ac6624ff3510a1ed657f8"
+	if got := sourceRevision(source, video, audio); got != want {
+		t.Fatalf("source revision = %q, want %q", got, want)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return fn(request) }
@@ -270,5 +292,38 @@ func TestStrictGenericRequestDecoding(t *testing.T) {
 	}
 	if _, _, err := decodeRequest(strings.Replace(valid, "avc1.64002a", "vp9", 1)); err == nil {
 		t.Fatal("incompatible video codec succeeded")
+	}
+	for _, operation := range []string{"inspect", "produce"} {
+		for _, missing := range []string{"", "video", "audio"} {
+			t.Run(operation+"/missing-"+missing, func(t *testing.T) {
+				var request map[string]any
+				if err := json.Unmarshal([]byte(valid), &request); err != nil {
+					t.Fatal(err)
+				}
+				request["operation"] = operation
+				if operation == "produce" {
+					request["expectedRevision"] = strings.Repeat("a", 64)
+					request["segment"] = 0
+					request["stagingDir"] = t.TempDir()
+					request["maxBytes"] = 1024
+					request["publishBy"] = time.Now().Add(time.Hour)
+				}
+				if missing != "" {
+					delete(request["source"].(map[string]any), missing)
+				}
+				body, err := json.Marshal(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				gotOperation, _, err := decodeRequest(string(body))
+				if missing == "" {
+					if err != nil || gotOperation != operation {
+						t.Fatalf("paired request operation=%q err=%v", gotOperation, err)
+					}
+				} else if err == nil {
+					t.Fatalf("missing %s succeeded", missing)
+				}
+			})
+		}
 	}
 }

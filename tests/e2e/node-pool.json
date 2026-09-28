@@ -1,7 +1,7 @@
 {
   "ruleChain": {
     "id": "default_node_pool",
-    "name": "Indexed VOD end-to-end owners"
+    "name": "Indexed Media end-to-end owners"
   },
   "metadata": {
     "endpoints": [],
@@ -19,8 +19,8 @@
         }
       },
       {
-        "id": "indexed-vod",
-        "type": "indexedVod",
+        "id": "indexed-media",
+        "type": "indexedMedia",
         "configuration": {
           "root": "/app/data/resource-origin/staging",
           "ffmpegAddress": "ffoip:5050",
