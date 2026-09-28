@@ -66,7 +66,15 @@ Proposed PR description:
 > on this PR CI. Hosted rename, release/versioning and deployment are separate.
 
 No merge, tag, repository rename, release, installation, or deployment is included
-in this proposal. Task acceptance A2-A5 remains open until CI evidence is recorded.
+in this proposal.
+
+## Execution result
+
+- Approved source commit: `d388152eb2feea64a04b32f413fa750c42425289`.
+- Branch pushed; draft PR: https://github.com/killbus/rulego-indexed-vod/pull/1.
+- Owning CI run 36389841942 passed; A2-A5 evidence is now recorded in
+  [acceptance-evidence.md](acceptance-evidence.md). A task-documentation follow-up
+  records the result without changing the implementation.
 
 ## Other working trees
 

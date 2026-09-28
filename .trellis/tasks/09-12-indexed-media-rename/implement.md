@@ -105,7 +105,7 @@ added for the rename are not evidence until executed successfully.
 ## 5. Quality/spec gate and handoff (A0-A6)
 
 - [x] Complete the independent Trellis source review and local checks. No concrete
-  defects remain; the compiled/runtime quality gate is still pending owning CI.
+  defects remain; owning CI run 36389841942 passed the compiled/runtime gate.
 - [x] Main performs the required spec review through trellis-update-spec: update
   the source quality guide's example cache naming and engineering capability
   wording without widening support. Do not point the live ownership guide at a

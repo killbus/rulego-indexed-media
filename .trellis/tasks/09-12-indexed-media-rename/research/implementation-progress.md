@@ -93,3 +93,18 @@ network failures will be retried without treating failed checks as passing.
 - Created `feat/indexed-media-rename` from the reviewed baseline; preparing the
   approved source commit. CI evidence remains pending
   until the candidate revision runs on GitHub.
+
+## Successful CI and draft PR handoff (2026-09-28)
+
+- Source commit: `d388152eb2feea64a04b32f413fa750c42425289`,
+  `feat!: rename indexed VOD to indexed media`; 28 reviewed source/task files.
+- Remote branch is synchronized. The user confirmed the push was completed;
+  subsequent Git readback reported up-to-date and configured origin tracking.
+- Created draft PR https://github.com/killbus/rulego-indexed-vod/pull/1 against main.
+- CI run https://github.com/killbus/rulego-indexed-vod/actions/runs/36389841942
+  succeeded for that source head: Go vet/unit/race, both architecture builds,
+  checksums/ABI/module identity, owner/ref smoke, and paired HLS seek. No CI repair
+  was necessary. A0-A6 are accepted; artifact IDs and archive digests are recorded
+  in [acceptance-evidence.md](acceptance-evidence.md).
+- Task stays open for PR review and Trellis wrap-up. No merge, hosted rename,
+  release, installation, or deployment was performed.

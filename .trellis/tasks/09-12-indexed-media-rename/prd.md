@@ -27,7 +27,9 @@ the current media behavior and make its support limits explicit.
   [session recovery](research/session-recovery.md).
 - Continuation evidence (2026-09-28): [local acceptance](research/acceptance-evidence.md)
   and [proposed commit/CI handoff](research/commit-plan.md). Source docs and
-  delivery boundaries are reviewed; compiled/runtime acceptance remains open.
+  delivery boundaries are reviewed; compiled/runtime acceptance passed in
+  [CI run 36389841942](https://github.com/killbus/rulego-indexed-vod/actions/runs/36389841942).
+  [Draft PR #1](https://github.com/killbus/rulego-indexed-vod/pull/1) is ready for review.
 
 ## Background
 
@@ -123,16 +125,16 @@ must update. The user approved this complete naming map for implementation.
 - [x] A1 (R1, R2): Current docs state the new capability/name and current support
   matrix without claiming single-track support. Remaining old-name matches are
   explained by an explicit historical/protocol/migration/negative-test exception.
-- [ ] A2 (R2, R4, R7): Module metadata identifies the new module; the plugin
+- [x] A2 (R2, R4, R7): Module metadata identifies the new module; the plugin
   exports exactly one indexedMedia component with the new label and unchanged
   relations. The old indexedVod type is absent and an old-type rule fails to load.
-- [ ] A3 (R3, R5): All shipped owner/ref pairs load correctly. New graph cache
+- [x] A3 (R3, R5): All shipped owner/ref pairs load correctly. New graph cache
   readers/writers/invalidation agree, old namespaces are not fallback inputs, and
   cold-cache recovery still follows ordinary resolution/inspection.
-- [ ] A4 (R5, R6): Revision fixtures and existing lease, Range, production,
+- [x] A4 (R5, R6): Revision fixtures and existing lease, Range, production,
   deadline/path/cleanup/error tests pass; missing either track is still rejected.
   No resource identity, output-profile tag, or owned data root changes.
-- [ ] A5 (R2, R7): Owning CI passes formatting/vet/unit/race checks, builds both
+- [x] A5 (R2, R7): Owning CI passes formatting/vet/unit/race checks, builds both
   architectures with aligned new-name artifacts and verified sidecars, loads the
   expected unprefixed type in the pinned runtime, and passes the paired-track HLS
   seek/peer-coexistence test. Evidence identifies the tested source revision.

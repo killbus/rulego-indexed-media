@@ -3,11 +3,13 @@
 ## Snapshot and scope
 
 - Resumed on 2026-09-28 after the user requested `继续推进`.
-- Source checkout: `D:/Repositories/rulego-indexed-vod`, branch `main`.
-- Baseline HEAD: `ab2217bccb46b8ca854b778ef82cd805e6941cb9`. Evidence below
-  concerns the uncommitted candidate diff, not a built or released artifact.
-- The task remains `in_progress`. Compiled tests and final runtime acceptance
-  belong to owning CI under the reviewed execution plan.
+- Source checkout: `D:/Repositories/rulego-indexed-vod`; initial review on `main`,
+  delivered on `feat/indexed-media-rename`.
+- Baseline HEAD: `ab2217bccb46b8ca854b778ef82cd805e6941cb9`. Source commit:
+  `d388152eb2feea64a04b32f413fa750c42425289`.
+- The local checks below preceded the source commit. Owning CI subsequently
+  passed; see the run and artifact evidence below. The task remains open for
+  draft PR review and Trellis wrap-up, without implying merge or deployment.
 
 ## Local verification
 
@@ -36,10 +38,10 @@ the eight JSONL context entries parse successfully.
   boundaries, including `Failure` / `invalid_input` and valid paired controls.
 - A literal source revision digest against the unchanged pre-rename algorithm:
   `d6e815a371172793a89d537156d03db8394870361c9ac6624ff3510a1ed657f8`.
-  Independently recomputed during implementation; Go execution remains pending.
+  Independently recomputed during implementation, then verified by Go tests in CI.
 
-These tests are authored and formatted, not reported as passing. Existing
-lease/singleflight, Range, producer, cleanup, and error tests remain in place.
+These tests passed in the owning CI unit and race runs, together with the retained
+lease/singleflight, Range, producer, cleanup, and error tests.
 
 ## Independent Trellis review
 
@@ -47,11 +49,10 @@ The check sub-agent completed the full production/docs/config/CI/E2E and Go-test
 source review on 2026-09-28 with no concrete defects and no reviewer edits. It
 independently reran the local verifier, production formatting/diff checks, context
 validation, and workflow YAML/Bash checks. No local review work remains; the
-candidate is ready for owning CI.
+candidate was ready for owning CI, which subsequently passed.
 
-Compatibility with the pinned RuleGo API is not verified locally because the
-dependency is not cached. Compiled and runtime checks remain pending CI; the
-source-review result does not substitute for them.
+The pinned RuleGo dependency was unavailable locally. Its API compatibility and
+runtime behavior were verified by the successful owning CI run below.
 
 ## Downstream guidance
 
@@ -77,14 +78,43 @@ the separately verified hosted rename.
 
 ## CI and external acceptance
 
-Still pending, with no successful run or candidate artifact claimed:
+- Draft PR: https://github.com/killbus/rulego-indexed-vod/pull/1
+- CI: https://github.com/killbus/rulego-indexed-vod/actions/runs/36389841942
+- Event: `pull_request`; reported head SHA:
+  `d388152eb2feea64a04b32f413fa750c42425289`.
+- `gh run watch 36389841942 --repo killbus/rulego-indexed-vod --exit-status`
+  confirmed overall `success` on 2026-09-28.
 
-- `go list -m`, `go vet ./...`, `go test ./...`, `go test -race ./...`.
-- Pinned SDK builds for linux/amd64 and linux/arm64, checksums/ABI sidecars,
-  embedded `path`/`mod` identity, and matching-runtime shared-owner smoke.
-- Peer-plugin coexistence and real paired HLS playback/seek.
+| Check | Result |
+| --- | --- |
+| Source module identity and formatting | Passed |
+| `go vet ./...`, `go test ./...`, `go test -race ./...` | Passed |
+| linux/amd64 and linux/arm64 pinned SDK builds | Passed |
+| Plugin checksums and ABI sidecars | Passed on both platforms |
+| Embedded new module `path` / `mod`, old module absence | Passed on both platforms |
+| Pinned runtime owner/ref smoke and old-type absence | Passed on both platforms |
+| Peer-plugin coexistence and real paired HLS playback/seek | Passed |
+| Release metadata collection | Passed; no release published |
 
-There has been no commit, push, CI dispatch, hosted rename, release, installation,
-or deployment during this continuation. A1/A6 are accepted from source
-review/handoff; A2-A5 remain open until the required compiled/runtime evidence
-exists. No archive or completion transition is appropriate yet.
+Candidate filenames are `indexed-media-rulego-v0.2.0-linux-amd64.so` and
+`indexed-media-rulego-v0.2.0-linux-arm64.so`, with `.sha256` and `.abi.json`
+sidecars. Build jobs verified ABI
+`abi-d4fc741b72b9dba1573b61029d6deba9d17c8c22f2805546a5a92764b5c404bf` and lock
+`sha256:5f9501666c46871d6acd84ab259f5ce72bf11ae2d566a51f649d2c6acd289c98`
+against the unchanged `plugin-abi-release.json`. That file also pins the SDK,
+runtime, and packaging revision used by these jobs.
+
+The GitHub artifact API reported these unexpired archives. Digests identify
+uploaded archives, not individual plugin files; plugin hashes were verified
+inside their owning build jobs.
+
+| Archive | Artifact ID | Archive SHA-256 |
+| --- | --- | --- |
+| plugin-linux-amd64 | 10956310578 | `18d86aead1f164ce716bb59b337bbd4ed790c80a48b07522f005cbbebc0e3652` |
+| plugin-linux-arm64 | 10956450495 | `b76f6078bae4be7a5bf53f2ed5525c80e74615a4bc3ceecb0e05e5080261e7e7` |
+| release-metadata | 10956370667 | `de88f90b7c16e44df3d95595ca5bb9d2ba2d281220c0322fb002bad0b71a0d54` |
+
+A0-A6 are accepted for this source stage. The source commit is pushed and the
+draft PR is ready for review. Merge, hosted rename, release, installation, and
+deployment have not been performed. Task archival and journal wrap-up remain
+separate from this draft-PR handoff.
