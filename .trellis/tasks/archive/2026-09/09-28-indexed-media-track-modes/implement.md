@@ -1,10 +1,10 @@
 # Execution plan: selected indexed-media track modes
 
-Status: in_progress. On 2026-09-28 the user confirmed the final implementation
-review after selecting TS output and per-request track selection. The task is
-active; implementation and source review are complete. Checkboxes record evidence,
-not assumed product-test results. The first PR CI passed compiled tests and both
-architecture build/smoke; full media acceptance requires harness fixes and rerun.
+Status: completed and archived. The user confirmed TS output and per-request
+track selection on 2026-09-28. Implementation, independent review, and all A1-A5
+criteria passed; owning CI 36408640108 verified compiled tests, both architecture
+build/smoke, and complete real-media acceptance at `9a1abc7`. Checkboxes refer to
+the recorded evidence in research/acceptance-evidence.md.
 
 ## Before activation
 
