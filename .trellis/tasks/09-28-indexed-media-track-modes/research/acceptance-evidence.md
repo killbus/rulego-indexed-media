@@ -1,13 +1,13 @@
 # Acceptance evidence: selected indexed-media track modes
 
 Date: 2026-09-28. Implementation authorized by the user's final confirmation.
-Task status: in_progress. This record separates source review and structural
-checks from compiled/runtime acceptance.
+All A1-A5 acceptance criteria passed in owning CI 36408640108. Final task
+archival and PR squash merge follow this evidence record.
 
 ## Source and artifact identity
 
 - Base HEAD: d85b5ee6090384ef9f3a8a056a5766bed6ed2e6b on main.
-- Candidate: `8b60a40bbfe84f4f29bc2b40f0a99d78871df1bd` on
+- Accepted candidate: `9a1abc76b85808a1bea9e48d1b371160ea62e02a` on
   `feat/indexed-media-track-modes`, pushed after user confirmation.
 - PR: https://github.com/killbus/rulego-indexed-vod/pull/2 (base `main`).
 - The three pre-existing bookkeeping commits remain intact. They are not new
@@ -19,11 +19,11 @@ checks from compiled/runtime acceptance.
 
 | Criterion | Source / planned evidence | Execution status |
 | --- | --- | --- |
-| A1 | node.go strict decoder; node_test.go public selections and track_modes_test.go malformed-request cases | Unit/race tests passed in CI 36402240660 |
-| A2 | source.go/producer.go primary selection; producer_modes_test.go ranges/maps; probe_test.go EOF cases; tests/e2e/track_modes.py stream/timing checks | Implemented; actual-media CI pending |
-| A3 | source_test.go paired literal; track_modes_test.go single literals; source_modes_test.go lease isolation; producer_modes_test.go renewal/gate | Unit/race tests passed in CI 36402240660 |
-| A4 | Existing safety/ownership tests; producer_modes_test.go retries, cancellation, limits, paths, stale invalidation and cleanup | Unit/race and both-architecture smoke passed; complete E2E pending |
-| A5 | README/spec contracts, full-scope review, all CI jobs | Docs/source review and build/test jobs passed; E2E failed |
+| A1 | node.go strict decoder; node_test.go public selections and track_modes_test.go malformed-request cases | PASS: unit/race in CI 36408640108 |
+| A2 | source.go/producer.go primary selection; producer_modes_test.go ranges/maps; probe_test.go EOF cases; tests/e2e/track_modes.py stream/timing checks | PASS: all four real-media fixture selections and bounded range checks |
+| A3 | source_test.go paired literal; track_modes_test.go single literals; source_modes_test.go lease isolation; producer_modes_test.go renewal/gate | PASS: unit/race plus distinct real-media revisions |
+| A4 | Existing safety/ownership tests; producer_modes_test.go retries, cancellation, limits, paths, stale invalidation and cleanup | PASS: unit/race, both-architecture smoke, and complete paired lifecycle E2E |
+| A5 | README/spec contracts, full-scope review, all CI jobs | PASS: source review, compiled checks, architecture builds/smoke, and real TS/HLS acceptance |
 
 ## Structural validation
 
@@ -132,8 +132,9 @@ Run: https://github.com/killbus/rulego-indexed-vod/actions/runs/36405654696
   `paired-6.json` reports the first three audio packets before the video
   keyframe in demux order; those packets are present in the member decode but
   absent after the direct seek. The assertion correctly rejects this loss.
-- The short-audio mode and subsequent paired lifecycle checks have not yet
-  executed. This run does not establish complete A2/A4/A5 acceptance.
+- Short-audio and the final broken-mapping check have not yet executed. Paired
+  cache/restart/retention checks precede the selected-track harness. This run
+  does not establish complete A2/A4/A5 acceptance.
 
 The next harness correction must use bounded distant pre-roll before the
 requested source interval, preserve timestamps, and retain the strict
@@ -157,15 +158,40 @@ Second repair local validation:
   0.512 seconds of pre-roll. The saved command establishes requested seek
   geometry; fixture statistics do not establish HLS member-fetch order.
 
-## Runtime validation still required
+## Accepted owning-CI execution
 
-Per the approved execution plan, owning CI must run go vet, unit tests, race
-tests, amd64/arm64 plugin build and matching-host ABI/registration/owner-ref
-smoke, and tests/e2e-hls-seek.sh with the candidate and verified peers.
+Run: https://github.com/killbus/rulego-indexed-vod/actions/runs/36408640108
 
-No local Docker build or runtime suite is substituted for this evidence. Record
-the next tested commit, CI URL, plugin checksums/ABI, and actual media results
-here when available. Prior rename CI is not evidence for this implementation.
+- PR head: `9a1abc76b85808a1bea9e48d1b371160ea62e02a`; runtime merge checkout:
+  `f51b33cf082f6276d1bb1b809fa50c81e5574d78`. All five CI jobs passed.
+- PASS: formatting, vet, unit/race, 32 Python controls, release metadata, both
+  architecture builds/ABI/owner-ref smoke, real TS/HLS, and artifact uploads.
+- PASS: exact selected streams, first/distant/final/adjacent members, source
+  timestamps, nonzero starts, single-member staging/publication, and range
+  isolation for video-only, audio-only, paired, and short audio. Each selection
+  has a distinct revision. Network records total 17/17/41/17 respectively;
+  single modes contain only their selected representation path.
+- PASS: short AAC remains below 64 KiB with a proven clipped initial probe and
+  exact later reads. Its distant seek starts at source time 6.56 and decodes
+  1.002666667 seconds.
+- PASS: distant video seek covers 16..17 exactly; audio-only covers
+  16.032..17.034666667; paired video covers 16..17 and paired audio covers
+  16..17.013333333. All pass the unchanged codec-frame tolerances.
+- PASS: paired concurrent/warm requests, bounded retry/ranges, restart with
+  stable manifest/member hashes and no renewed media production, retention/
+  parent expiry, HTTP 206/416/304, CORS, and final broken mapping check.
+  The log ends with both selected-track and hermetic-HLS success markers.
+- Downloaded source probes, timing records, framehashes, requests, and seek
+  geometry were replayed locally against the strict oracle. Downloaded plugin
+  bytes match checksum and ABI sidecars for both architectures:
+  - amd64: `3c2e8d711392eabcf08349c570d11411f494fd9aaa6aaa9b48aebd2cc6fa21dc`
+  - arm64: `15f233a7a62af90a60c7b47afb9986eea4f901c193227adb843b42f88c3256a9`
+- ABI: `abi-d4fc741b72b9dba1573b61029d6deba9d17c8c22f2805546a5a92764b5c404bf`.
+  Both lock digests match `plugin-abi-release.json`. Runtime and peer identities
+  are retained in `artifact-identity.txt`; no local runtime substitutes for CI.
+
+The remaining changes are acceptance records and Trellis archival/journal only.
+They stay on the feature branch and receive final PR checks before squash merge.
 
 The E2E job now retains artifact identity, FFprobe version, source and segment
 probe JSON, framehash output, request statistics, timing results, and playlists

@@ -45,6 +45,18 @@ preserving trim, retaining strict timing assertions. Stage only these reviewed
 paths after the checks; do not include downloaded evidence. Push to the same
 feature branch and verify actual-media CI before the planned squash merge.
 
+The second repair was committed and pushed as `9a1abc7`; owning CI 36408640108
+passed every job. Final bookkeeping follows the existing authorization:
+
+1. `docs: record selected-track CI acceptance`: tests/e2e/README.md and this
+   task's PRD, implementation checklist, task.json, acceptance evidence, and
+   commit plan. No production or test logic changes.
+2. Trellis task archive commit, limited to this completed task.
+3. Trellis session journal commit, recording the accepted work commits.
+
+Push these together on the feature branch, verify the final PR checks, and
+squash merge PR #2 so the entire change lands as one main commit.
+
 ## Initial proposal (historical)
 
 Prepared for the workflow Phase 3.4 review. This file is a proposal, not approval

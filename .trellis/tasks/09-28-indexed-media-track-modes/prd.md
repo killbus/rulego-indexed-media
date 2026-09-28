@@ -56,26 +56,26 @@ enables audio listening and silent-video use without fetching an unwanted track.
 
 ## Acceptance Criteria
 
-- [ ] A1 (R1): Both public operations accept the three valid selections; zero
+- [x] A1 (R1): Both public operations accept the three valid selections; zero
   tracks, null/empty/invalid companions, nested unknown fields, and malformed
   requests fail as invalid_input before network/FFmpeg work.
-- [ ] A2 (R2, R3): Real first, distant, final, and adjacent members contain
+- [x] A2 (R2, R3): Real first, distant, final, and adjacent members contain
   exactly the selected stream types and decode successfully. Inspect/produce
   agree on the primary timeline, including nonzero earliest timestamps. Single
   modes issue no absent-track requests and produce only the requested member.
   A valid audio fixture below 64 KiB succeeds; invalid or oversized probe
   responses fail without relaxing exact subsequent index/media ranges.
-- [ ] A3 (R4): All modes have distinct revisions; the paired literal digest
+- [x] A3 (R4): All modes have distinct revisions; the paired literal digest
   remains unchanged; single-track literals are pinned. Evidence changes alter
   revision. URL/header renewal triggers discovery and current-credential reads
   without altering revision. Cache/singleflight and stale invalidation remain
   isolated by complete lease.
-- [ ] A4 (R5): Existing paired playback/seek, overlap behavior, registration,
+- [x] A4 (R5): Existing paired playback/seek, overlap behavior, registration,
   owner/ref, deadline, retry, byte-bound, safe-path, temporary-input cleanup,
   cancellation, and error-sanitization regressions pass with single-mode coverage
   for affected paths. Revision mismatch permits only needed bounded discovery;
   it prevents production init/segment range requests and FFmpeg.
-- [ ] A5 (R6): English docs/specs show per-request selection and result contracts;
+- [x] A5 (R6): English docs/specs show per-request selection and result contracts;
   the provider example remains a paired caller. CI passes formatting, vet, unit
   and race tests, both architecture build/smoke checks, and real TS playback.
   Evidence records the tested source/artifact and any unavailable checks.
@@ -95,12 +95,8 @@ enables audio listening and silent-video use without fetching an unwanted track.
 
 ## Execution status
 
-The user confirmed the final PRD/design/execution review on 2026-09-28, and
-task.py start activated this task. Implementation, documentation, independent
-source review, and local static checks are complete. PR #2 targets main on the
-feature branch. Run 36405654696 at `ee6df47` passed compiled tests, architecture
-build/smoke, AAC probe inference, debug uploads, and video-only/audio-only
-acceptance. Paired direct HLS seek lost audio frames present in the member; a
-bounded seek pre-roll correction and a new CI run remain required. Short-audio
-and remaining lifecycle checks are pending. See research/acceptance-evidence.md;
-this task is not completed or archived.
+All A1-A5 criteria passed in owning CI 36408640108 at commit `9a1abc7`.
+Independent review and local controls passed; downloaded media evidence and
+both architecture artifact checksums/ABI were verified. The final record and
+Trellis archive/journal remain on the feature branch for PR #2's squash merge.
+See research/acceptance-evidence.md for exact results and artifact identities.

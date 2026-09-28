@@ -56,7 +56,8 @@ checks reject late audio, missing coverage, gaps, and wrong source positions.
 Each `*-seek-request.json` saves both playlist offsets, both source positions,
 member numbers, preroll duration, and the exact FFmpeg arguments before remote
 decoding or validation, so failures retain the requested seek geometry. The
-corrected command still requires actual-media validation in owning CI.
+corrected command passed actual-media CI run `36408640108` for all selections,
+including short audio; paired audio began exactly at source time 16 seconds.
 
 The pinned FFprobe in CI run `36402240660` omitted `duration` only for the first
 packet of `original-audio.m4a`. Its next DTS was 1024 samples later; all 750

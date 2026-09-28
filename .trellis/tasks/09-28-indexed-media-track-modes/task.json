@@ -15,7 +15,7 @@
   "branch": "feat/indexed-media-track-modes",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": "ee6df47f861599d2bc921106a4c49762ab54376f",
+  "commit": "9a1abc76b85808a1bea9e48d1b371160ea62e02a",
   "pr_url": "https://github.com/killbus/rulego-indexed-vod/pull/2",
   "subtasks": [],
   "children": [],
@@ -44,6 +44,6 @@
     "tests/e2e/README.md",
     ".github/workflows/ci.yml"
   ],
-  "notes": "2026-09-28: PR #2 remains on feat/indexed-media-track-modes. CI 36405654696 passed vet, unit/race, Python controls, both-architecture build/ABI smoke, and release metadata. AAC probe inference and readable debug uploads passed; video-only and audio-only acceptance passed. Paired direct HLS seek loses three audio frames that the actual member retains. A bounded seek pre-roll correction is in progress; short-audio and remaining paired lifecycle acceptance are pending. Continue CI on the feature branch and use a squash merge to keep main history compact. One requested TS per selected track set; engineering indexed-audio remains independent.",
+  "notes": "2026-09-28: All A1-A5 criteria passed in owning CI 36408640108 at 9a1abc7. Real video-only, audio-only, paired and short-audio TS/HLS checks passed, including bounded distant seek, ranges and publication. Full paired lifecycle and both architecture build/ABI/owner-ref smoke passed. Downloaded media and plugin checksum/ABI evidence verified; independent review found no remaining defects. Final records, task archive and journal stay on the feature branch before PR #2 squash merge. One requested TS per selected track set; no release/deployment.",
   "meta": {}
 }
