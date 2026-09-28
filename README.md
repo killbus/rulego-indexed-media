@@ -28,14 +28,16 @@ outside this plugin's current scope.
 
 ## Install and configure
 
-For a separately authorized cutover, select
+Download the plugin for your version from the
+[GitHub releases](https://github.com/killbus/rulego-indexed-media/releases). Select
 `indexed-media-rulego-v<VERSION>-linux-<arch>.so` (`amd64` or `arm64`) with its
 matching `.so.sha256` and `.so.abi.json` sidecars. Verify the checksum and ABI
 against the plugin-enabled RuleGo runtime before placing the intended producer
 in `data/plugins` and restarting RuleGo. CI is configured to build, verify the
 embedded Go module identity, and smoke-load with the immutable SDK/runtime pair
-recorded in [`plugin-abi-release.json`](plugin-abi-release.json). This source
-preparation is not evidence of a published new-name release or an installation.
+recorded in [`plugin-abi-release.json`](plugin-abi-release.json). Releases publish
+the verified CI artifacts without rebuilding them. Installation and live-rule
+cutover remain deployment steps.
 
 Configure one shared owner in `node_pool.json`:
 
@@ -163,22 +165,23 @@ selection must include it in any cache key used before inspection. The shipped
 YouTube example continues to select a pair. Old short-lived cache
 entries may expire naturally; retained media data is not moved or deleted.
 
-## Breaking migration and delivery status
+## Breaking migration in v0.3.0
 
 The source module identity is `github.com/killbus/rulego-indexed-media`. This is
 a deliberate breaking rename: there is no `indexedVod` alias, forwarding module,
 old-artifact selector, or cache fallback. Rules using the old public type must
 be migrated; update each shipped owner ID and every matching reference together.
 
-Local source preparation does not rename or verify the hosted repository. The
-hosted rename to `killbus/rulego-indexed-media`, a fresh release version and
-publication, installation, and live-rule cutover remain separately authorized
-work. The local checkout directory need not change.
+The hosted repository is now
+[`killbus/rulego-indexed-media`](https://github.com/killbus/rulego-indexed-media).
+Version `v0.3.0` uses the new module, component, artifact and cache names and adds
+caller-selected video-only, audio-only and paired TS production. Update repository
+remotes and download automation to the new name. The local checkout directory
+need not change.
 
-1. The repository/release owner confirms the target name, performs and verifies
-   the hosted rename, and reconciles remotes and authority routes. Select a fresh
-   release version and publish only the exact successful-CI artifacts and
-   sidecars; do not relabel or overwrite an older release.
+1. Select the versioned plugin and matching sidecars from the new repository.
+   Verify its checksum and Plugin ABI against the intended runtime. Do not
+   relabel an older plugin or load both old and new producers together.
 2. The deployment/rule owner inventories download automation, installed plugins,
    node pools, stored/exported rules, and editor templates. Stage the matched
    artifact and configuration, load only the intended producer, and verify the
