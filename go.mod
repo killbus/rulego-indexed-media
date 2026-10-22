@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/killbus/rulego-ffmpeg-over-ip v0.5.0
-	github.com/rulego/rulego v0.36.1-0.20260802040353-2ec085f29027
+	github.com/rulego/rulego v1.0.0
 )
 
 require (
