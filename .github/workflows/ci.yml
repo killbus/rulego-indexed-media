@@ -8,12 +8,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # actions/checkout v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      # actions/setup-go v5.6.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
           cache: true
@@ -56,8 +64,10 @@ jobs:
             machine: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          persist-credentials: false
           path: plugin
       - name: Read immutable Plugin ABI release
         run: |
@@ -166,7 +176,8 @@ jobs:
                 ([.metadata.nodes[] | select(.type == "indexedVod")] | length) == 0 and
                 ([.metadata.nodes[] | select(.configuration.root? == "ref://indexed-vod")] | length) == 0
               '
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: plugin-linux-${{ matrix.arch }}
           path: |
@@ -181,12 +192,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # actions/checkout v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      # actions/setup-go v5.6.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/download-artifact@v4
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: plugin-linux-amd64
           path: dist
@@ -234,7 +250,8 @@ jobs:
           } >> "$GITHUB_ENV"
       - name: Run real indexed track modes and paired lifecycle
         run: tests/e2e-hls-seek.sh
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: indexed-media-track-evidence
@@ -270,7 +287,8 @@ jobs:
                   except OSError as error:
                       print(f"Skipping unreadable debug file {source}: {error}")
           PY
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: failure()
         with:
           name: e2e-hls-seek-debug
@@ -280,13 +298,17 @@ jobs:
   release-metadata:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
       - name: Collect release metadata
         run: |
           mkdir dist
           cp LICENSE README.md compatibility.json plugin-abi-release.json dist/
           cp examples/youtube-hls/chain.json dist/example-chain.json
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-metadata
           path: dist/
