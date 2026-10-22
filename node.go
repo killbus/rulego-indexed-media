@@ -21,7 +21,7 @@ import (
 
 const (
 	componentType         = "indexedMedia"
-	componentVersion      = "0.3.0"
+	componentVersion      = "0.3.1"
 	maxRequestBytes       = 8 << 20
 	maxProducedBytes      = int64(1 << 30)
 	defaultIndexTimeout   = 30 * time.Second
