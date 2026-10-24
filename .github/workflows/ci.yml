@@ -225,10 +225,10 @@ jobs:
               sleep $((2 ** attempt))
             done
           }
-          ffmpeg_artifact=ffmpeg-over-ip-rulego-v0.5.1-linux-amd64.so
-          origin_artifact=resource-origin-rulego-v0.1.1-linux-amd64.so
-          download_release killbus/rulego-ffmpeg-over-ip v0.5.1 "$ffmpeg_artifact"
-          download_release killbus/rulego-resource-origin v0.1.1 "$origin_artifact"
+          ffmpeg_artifact=ffmpeg-over-ip-rulego-v0.5.2-linux-amd64.so
+          origin_artifact=resource-origin-rulego-v0.2.0-linux-amd64.so
+          download_release killbus/rulego-ffmpeg-over-ip v0.5.2 "$ffmpeg_artifact"
+          download_release killbus/rulego-resource-origin v0.2.0 "$origin_artifact"
           (
             cd tmp/peers
             sha256sum --check "$ffmpeg_artifact.sha256"
