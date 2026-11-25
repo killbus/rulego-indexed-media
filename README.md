@@ -155,11 +155,26 @@ set `share_http_server = true`. Set `publicOrigin` in the
 `manifest-public-origin` JavaScript node to the externally reachable RuleGo
 origin before deployment.
 
+Playlist publication requires a ready parent descriptor. A successful
+`resourceOrigin` operation can also return a failed, expired, pending or missing
+descriptor; its `Success` relation alone does not authorize publication. Cached
+playlists include the parent resource ID and resolve `0.ts` before each hit.
+An unavailable parent follows the normal source resolution/inspection/acquisition
+path, so a previous production timeout cannot pin an unusable playlist in cache.
+
+Issued member URLs carry `?parentResourceId=<public resource ID>`. Member requests
+resolve that parent without acquiring it, so a cancelled reader cannot leave an
+unowned production reservation. The ID survives source-lease cache expiry and
+RuleGo restarts. Existing playlists without this parameter must be fetched again;
+old cache records without a parent ID are misses. Member requests with no usable
+parent return `parent_unavailable` and do not start parent production. These
+guards do not fix the underlying cause of a producer timeout or extend retries.
+
 The example uses only `indexed-media:manifest:` and `indexed-media:lease:`
 graph-cache namespaces. They start cold after migration and follow the ordinary
 resolve/inspect path on a miss; there is no old-namespace lookup. Complete-lease
 hashing, paired media revisions, the `indexed-ts-v2` output profile, resource keys
-and URLs, and `resourceOrigin` storage roots are unchanged. Single-track requests
+and `resourceOrigin` storage roots are unchanged. Single-track requests
 use distinct revisions with the same TS profile. Callers supporting track
 selection must include it in any cache key used before inspection. The shipped
 YouTube example continues to select a pair. Old short-lived cache
