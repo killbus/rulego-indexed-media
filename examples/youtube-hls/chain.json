@@ -55,7 +55,7 @@
         "name": "Check cached YouTube manifest",
         "additionalInfo": {"layoutX": 320, "layoutY": 300},
         "configuration": {
-          "jsScript": "var id=String(metadata.videoId||'');if(!/^[A-Za-z0-9_-]{6,32}$/.test(id))throw new Error('invalid videoId');metadata.videoId=id;metadata.phase='initial';metadata.statusCode='';metadata.errorBody='';var key='indexed-media:manifest:youtube:'+id+':avc-1080-m4a:indexed-ts-v2',cache=$ctx.ChainCache(),cached=null,valid=false;metadata.manifestCacheKey=key;if(cache.Has(key)){try{cached=JSON.parse(String(cache.Get(key)));var revision=String(cached.revision||''),manifest=String(cached.manifest||''),expires=Number(cached.leaseExpiresAtMs||0);valid=/^[0-9a-f]{64}$/.test(revision)&&manifest.indexOf('#EXTM3U\\n')===0&&expires>Date.now()&&cache.Has('indexed-media:lease:'+id+':'+revision);if(valid){metadata.revision=revision;metadata.manifest=manifest;metadata.leaseExpiresAtMs=String(expires);}}catch(e){valid=false;}if(!valid)cache.Delete(key);}return {'msg':{'cached':valid},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "var id=String(metadata.videoId||'');if(!/^[A-Za-z0-9_-]{6,32}$/.test(id))throw new Error('invalid videoId');metadata.videoId=id;metadata.phase='initial';metadata.statusCode='';metadata.errorBody='';var key='indexed-media:manifest:youtube:'+id+':avc-1080-m4a:indexed-ts-v2',cache=$ctx.ChainCache(),cached=null,valid=false;metadata.manifestCacheKey=key;if(cache.Has(key)){try{cached=JSON.parse(String(cache.Get(key)));var revision=String(cached.revision||''),manifest=String(cached.manifest||''),expires=Number(cached.leaseExpiresAtMs||0);var parent=String(cached.parentResourceId||'');valid=/^[0-9a-f]{64}$/.test(parent)&&/^[0-9a-f]{64}$/.test(revision)&&manifest.indexOf('#EXTM3U\\n')===0&&expires>Date.now()&&cache.Has('indexed-media:lease:'+id+':'+revision);if(valid){metadata.parentResourceId=parent;metadata.revision=revision;metadata.manifest=manifest;metadata.leaseExpiresAtMs=String(expires);}}catch(e){valid=false;}if(!valid)cache.Delete(key);}return {'msg':{'cached':valid},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
@@ -73,7 +73,7 @@
         "name": "Return cached HLS playlist",
         "additionalInfo": {"layoutX": 800, "layoutY": 160},
         "configuration": {
-          "jsScript": "return {'msg':metadata.manifest,'metadata':{'Content-Type':'application/vnd.apple.mpegurl'},'msgType':msgType,'dataType':'TEXT'};"
+          "jsScript": "if(msg.state!=='ready'||String(msg.resourceId||'')!==metadata.parentResourceId)throw new Error('cached manifest parent is unavailable');return {'msg':metadata.manifest,'metadata':{'Content-Type':'application/vnd.apple.mpegurl'},'msgType':msgType,'dataType':'TEXT'};"
         }
       },
       {
@@ -183,7 +183,7 @@
         "name": "Resolve manifest parent",
         "additionalInfo": {"layoutX": 320, "layoutY": 800},
         "configuration": {
-          "jsScript": "var id=String(metadata.videoId||''),revision=String(metadata.revision||''),match=/^([0-9]+)\\.ts$/.exec(String(metadata.segment||''));if(!/^[A-Za-z0-9_-]{6,32}$/.test(id)||!/^[0-9a-f]{64}$/.test(revision)||!match)throw new Error('invalid segment path');metadata.videoId=id;metadata.revision=revision;metadata.segment=String(Number(match[1]));metadata.manifestCacheKey='indexed-media:manifest:youtube:'+id+':avc-1080-m4a:indexed-ts-v2';return {'msg':{'operation':'acquire','key':'youtube:'+id+':hls','fingerprint':'indexed-ts-v2:'+revision,'ttlMs':21600000,'maxBytes':33554432,'productionTimeoutMs':300000},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+          "jsScript": "var id=String(metadata.videoId||''),revision=String(metadata.revision||''),match=/^([0-9]+)\\.ts$/.exec(String(metadata.segment||''));if(!/^[A-Za-z0-9_-]{6,32}$/.test(id)||!/^[0-9a-f]{64}$/.test(revision)||!match)throw new Error('invalid segment path');metadata.videoId=id;metadata.revision=revision;metadata.segment=String(Number(match[1]));metadata.manifestCacheKey='indexed-media:manifest:youtube:'+id+':avc-1080-m4a:indexed-ts-v2';var parent=String(metadata.parentResourceId||'');if(!/^[0-9a-f]{64}$/.test(parent))return {'msg':{'state':'failed','failureKind':'parent_unavailable'},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};return {'msg':{'operation':'resolve','resourceId':parent},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
         }
       },
       {
@@ -198,7 +198,7 @@
         "type": "jsSwitch",
         "name": "Reuse initial member or produce child",
         "additionalInfo": {"layoutX": 800, "layoutY": 800},
-        "configuration": {"jsScript": "return [metadata.segment==='0'?'Initial':'Child'];"}
+        "configuration": {"jsScript": "if(msg.state!=='ready')return ['Unavailable'];return [metadata.segment==='0'?'Initial':'Child'];"}
       },
       {
         "id": "initial-resolve-request",
@@ -405,7 +405,7 @@
         "name": "Return HLS playlist",
         "additionalInfo": {"layoutX": 4400, "layoutY": 420},
         "configuration": {
-          "jsScript": "var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before manifest publication');var value={'manifest':String(metadata.manifest||''),'revision':String(metadata.revision||''),'leaseExpiresAtMs':expires};$ctx.ChainCache().Set(metadata.manifestCacheKey||('indexed-media:manifest:youtube:'+metadata.videoId+':avc-1080-m4a:indexed-ts-v2'),JSON.stringify(value),String(ttl)+'ms');return {'msg':metadata.manifest,'metadata':{'Content-Type':'application/vnd.apple.mpegurl'},'msgType':msgType,'dataType':'TEXT'};"
+          "jsScript": "var parent=String(msg.resourceId||'');if(msg.state!=='ready'||!/^[0-9a-f]{64}$/.test(parent))throw new Error('manifest parent unavailable: '+String(msg.failureKind||msg.state||'invalid_descriptor'));var lines=String(metadata.manifest||'').split('\\n');for(var i=0;i<lines.length;i++)if(lines[i].charAt(0)==='/')lines[i]+='?parentResourceId='+parent;metadata.manifest=lines.join('\\n');var expires=Number(metadata.leaseExpiresAtMs||0),ttl=Math.floor(expires-Date.now());if(!(ttl>0))throw new Error('source lease expired before manifest publication');var value={'manifest':String(metadata.manifest||''),'revision':String(metadata.revision||''),'leaseExpiresAtMs':expires,'parentResourceId':parent};$ctx.ChainCache().Set(metadata.manifestCacheKey||('indexed-media:manifest:youtube:'+metadata.videoId+':avc-1080-m4a:indexed-ts-v2'),JSON.stringify(value),String(ttl)+'ms');return {'msg':metadata.manifest,'metadata':{'Content-Type':'application/vnd.apple.mpegurl'},'msgType':msgType,'dataType':'TEXT'};"
         }
       },
       {
@@ -416,22 +416,6 @@
         "configuration": {
           "jsScript": "var publicOrigin='http://localhost:9090'.replace(/\\/+$/,'');var lines=String(msg||'').split('\\n');for(var i=0;i<lines.length;i++)if(lines[i].charAt(0)==='/')lines[i]=publicOrigin+lines[i];return {'msg':lines.join('\\n'),'metadata':metadata,'msgType':msgType,'dataType':'TEXT'};"
         }
-      },
-      {
-        "id": "parent-missing-request",
-        "type": "jsTransform",
-        "name": "Reject segment without manifest",
-        "additionalInfo": {"layoutX": 800, "layoutY": 1100},
-        "configuration": {
-          "jsScript": "return {'msg':{'operation':'fail','resourceId':msg.resourceId,'generation':msg.generation,'kind':'parent_unavailable'},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
-        }
-      },
-      {
-        "id": "parent-missing",
-        "type": "resourceOrigin",
-        "name": "Close missing parent reservation",
-        "additionalInfo": {"layoutX": 1040, "layoutY": 1100},
-        "configuration": {"root": "ref://resource-origin"}
       },
       {
         "id": "production-fail-request",
@@ -466,11 +450,88 @@
         "configuration": {
           "jsScript": "throw new Error(String((msg&&msg.message)||metadata.errorBody||'source resolution failed'));"
         }
+      },
+      {
+        "id": "cached-parent-request",
+        "type": "jsTransform",
+        "name": "Check cached manifest parent",
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 20
+        },
+        "configuration": {
+          "jsScript": "return {'msg':{'operation':'resolve','resourceId':metadata.parentResourceId,'member':'0.ts'},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "cached-parent-lookup",
+        "type": "resourceOrigin",
+        "name": "Resolve cached manifest parent",
+        "additionalInfo": {
+          "layoutX": 1040,
+          "layoutY": 20
+        },
+        "configuration": {
+          "root": "ref://resource-origin"
+        }
+      },
+      {
+        "id": "cached-parent-switch",
+        "type": "jsSwitch",
+        "name": "Serve only a ready manifest parent",
+        "additionalInfo": {
+          "layoutX": 1280,
+          "layoutY": 20
+        },
+        "configuration": {
+          "jsScript": "return [msg.state==='ready'&&String(msg.resourceId||'')===metadata.parentResourceId?'Ready':'Resolve'];"
+        }
+      },
+      {
+        "id": "segment-parent-switch",
+        "type": "jsSwitch",
+        "name": "Require an issued parent ID",
+        "additionalInfo": {
+          "layoutX": 440,
+          "layoutY": 800
+        },
+        "configuration": {
+          "jsScript": "return [msg.operation==='resolve'?'Resolve':'Unavailable'];"
+        }
+      },
+      {
+        "id": "parent-unavailable",
+        "type": "jsTransform",
+        "name": "Return unavailable parent without reserving",
+        "additionalInfo": {
+          "layoutX": 1040,
+          "layoutY": 1100
+        },
+        "configuration": {
+          "jsScript": "metadata.resourceOriginState='failed';delete metadata.resourceOriginUrl;delete metadata.resourceOriginErrorKind;return {'msg':{'state':'failed','resourceId':String(msg.resourceId||metadata.parentResourceId||''),'failureKind':'parent_unavailable'},'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
+      },
+      {
+        "id": "production-fail-response",
+        "type": "jsTransform",
+        "name": "Return failed publication",
+        "additionalInfo": {
+          "layoutX": 3920,
+          "layoutY": 1460
+        },
+        "configuration": {
+          "jsScript": "if(metadata.kind==='manifest')throw new Error('manifest production failed: '+String(msg.failureKind||msg.state||'producer_failed'));return {'msg':msg,'metadata':metadata,'msgType':msgType,'dataType':'JSON'};"
+        }
       }
     ],
     "connections": [
       {"fromId":"manifest-request","toId":"manifest-cache-switch","type":"Success"},
-      {"fromId":"manifest-cache-switch","toId":"cached-manifest-response","type":"Cached"},
+      {"fromId":"manifest-cache-switch","toId":"cached-parent-request","type":"Cached"},
+      {"fromId":"cached-parent-request","toId":"cached-parent-lookup","type":"Success"},
+      {"fromId":"cached-parent-lookup","toId":"cached-parent-switch","type":"Success"},
+      {"fromId":"cached-parent-switch","toId":"cached-manifest-response","type":"Ready"},
+      {"fromId":"cached-parent-switch","toId":"source-resolve-request","type":"Resolve"},
+      {"fromId":"cached-parent-lookup","toId":"request-error","type":"Failure"},
       {"fromId":"cached-manifest-response","toId":"manifest-public-origin","type":"Success"},
       {"fromId":"manifest-cache-switch","toId":"source-resolve-request","type":"Resolve"},
       {"fromId":"source-resolve-request","toId":"source-resolver","type":"Success"},
@@ -493,10 +554,11 @@
       {"fromId":"parent-origin","toId":"parent-produce-request","type":"Produce"},
       {"fromId":"parent-produce-request","toId":"produce","type":"Success"},
 
-      {"fromId":"segment-request","toId":"parent-lookup","type":"Success"},
+      {"fromId":"segment-request","toId":"segment-parent-switch","type":"Success"},
+      {"fromId":"segment-parent-switch","toId":"parent-lookup","type":"Resolve"},
+      {"fromId":"segment-parent-switch","toId":"parent-unavailable","type":"Unavailable"},
+      {"fromId":"parent-ready-switch","toId":"parent-unavailable","type":"Unavailable"},
       {"fromId":"parent-lookup","toId":"parent-ready-switch","type":"Success"},
-      {"fromId":"parent-lookup","toId":"parent-missing-request","type":"Produce"},
-      {"fromId":"parent-missing-request","toId":"parent-missing","type":"Success"},
       {"fromId":"parent-ready-switch","toId":"initial-resolve-request","type":"Initial"},
       {"fromId":"initial-resolve-request","toId":"initial-resolve","type":"Success"},
       {"fromId":"parent-ready-switch","toId":"child-acquire-request","type":"Child"},
@@ -537,7 +599,8 @@
       {"fromId":"refresh-produce","toId":"production-fail-request","type":"Failure"},
       {"fromId":"stale-switch","toId":"production-fail-request","type":"Fail"},
       {"fromId":"produce-request","toId":"production-fail-request","type":"Failure"},
-      {"fromId":"production-fail-request","toId":"production-fail","type":"Success"}
+      {"fromId":"production-fail-request","toId":"production-fail","type":"Success"},
+      {"fromId":"production-fail","toId":"production-fail-response","type":"Success"}
     ]
   }
 }

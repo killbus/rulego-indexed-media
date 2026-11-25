@@ -351,7 +351,7 @@ func TestExampleScriptsCompile(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer engine.Stop(nil)
-	input = types.NewMsgWithJsonData(`{"resourceId":"parent-resource-id"}`)
+	input = types.NewMsgWithJsonData(`{"state":"ready","resourceId":"parent-resource-id"}`)
 	input.Metadata.PutValue("segment", "0")
 	engine.OnMsgAndWait(input, types.WithOnEnd(func(_ types.RuleContext, msg types.RuleMsg, err error, _ string) {
 		output, callbackErr = msg, err
@@ -496,10 +496,12 @@ func TestExampleManifestCache(t *testing.T) {
 				"firstNodeIndex": 0,
 				"nodes": []json.RawMessage{
 					nodes["manifest-request"], nodes["manifest-cache-switch"], nodes["cached-manifest-response"], nodes["manifest-response"], nodes["stale-switch"], nodes["refresh-request"], seedLease, poison, end,
+					json.RawMessage(`{"id":"ready-parent","type":"jsTransform","configuration":{"jsScript":"return {msg:{state:'ready',resourceId:metadata.parentResourceId},metadata:metadata,msgType:msgType,dataType:'JSON'};"}}`),
 				},
 				"connections": []map[string]string{
 					{"fromId": "manifest-request", "toId": "manifest-cache-switch", "type": types.Success},
-					{"fromId": "manifest-cache-switch", "toId": "cached-manifest-response", "type": "Cached"},
+					{"fromId": "manifest-cache-switch", "toId": "ready-parent", "type": "Cached"},
+					{"fromId": "ready-parent", "toId": "cached-manifest-response", "type": types.Success},
 					{"fromId": "manifest-cache-switch", "toId": "poison", "type": "Resolve"},
 					{"fromId": "cached-manifest-response", "toId": "end", "type": types.Success},
 					{"fromId": "stale-switch", "toId": "refresh-request", "type": "Refresh"},
@@ -528,7 +530,7 @@ func TestExampleManifestCache(t *testing.T) {
 		}
 
 		expiresAt := time.Now().Add(time.Hour).UnixMilli()
-		publish := types.NewMsgWithJsonData(`{}`)
+		publish := types.NewMsgWithJsonData(`{"state":"ready","resourceId":"` + strings.Repeat("b", 64) + `"}`)
 		publish.Metadata.PutValue("videoId", videoID)
 		publish.Metadata.PutValue("revision", revision)
 		publish.Metadata.PutValue("manifest", manifest)
@@ -547,7 +549,7 @@ func TestExampleManifestCache(t *testing.T) {
 		if err := json.Unmarshal([]byte(mappingValue.(string)), &mapping); err != nil {
 			t.Fatal(err)
 		}
-		if len(mapping) != 3 || mapping["manifest"] != manifest || mapping["revision"] != revision || int64(mapping["leaseExpiresAtMs"].(float64)) != expiresAt {
+		if len(mapping) != 4 || mapping["parentResourceId"] != strings.Repeat("b", 64) || mapping["manifest"] != manifest || mapping["revision"] != revision || int64(mapping["leaseExpiresAtMs"].(float64)) != expiresAt {
 			t.Fatalf("manifest mapping = %#v", mapping)
 		}
 		if strings.Contains(mappingValue.(string), "secret.invalid") || strings.Contains(mappingValue.(string), "headers") {
@@ -592,8 +594,10 @@ func TestExampleManifestCache(t *testing.T) {
 		withMapping   bool
 		legacyMapping bool
 		legacyLease   bool
+		missingParent bool
 	}{
 		{name: "cold cache"},
+		{name: "legacy mapping without parent", expiresAt: time.Now().Add(time.Hour).UnixMilli(), withLease: true, withMapping: true, missingParent: true},
 		{name: "expired mapping", expiresAt: time.Now().Add(-time.Minute).UnixMilli(), withLease: true, withMapping: true},
 		{name: "missing matching lease", expiresAt: time.Now().Add(time.Hour).UnixMilli(), withMapping: true},
 		{name: "legacy manifest and lease", expiresAt: time.Now().Add(time.Hour).UnixMilli(), withMapping: true, withLease: true, legacyMapping: true, legacyLease: true},
@@ -634,9 +638,13 @@ func TestExampleManifestCache(t *testing.T) {
 			if tc.legacyLease {
 				seedLeaseKey = strings.Replace(leaseKey, "indexed-media:", "indexed-vod:", 1)
 			}
+			mapping := map[string]any{"manifest": manifest, "revision": revision, "leaseExpiresAtMs": tc.expiresAt}
+			if !tc.missingParent {
+				mapping["parentResourceId"] = strings.Repeat("b", 64)
+			}
 			seedBody, _ := json.Marshal(map[string]any{
 				"mappingKey":  seedMappingKey,
-				"mapping":     map[string]any{"manifest": manifest, "revision": revision, "leaseExpiresAtMs": tc.expiresAt},
+				"mapping":     mapping,
 				"withLease":   tc.withLease,
 				"withMapping": tc.withMapping,
 				"leaseKey":    seedLeaseKey,
